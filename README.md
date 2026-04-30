@@ -72,6 +72,10 @@ The production base path is derived automatically from the GitHub repository
 name during the workflow run via `GITHUB_REPOSITORY`. For this repository that
 means the generated site is built for `/ardmp/`.
 
+The workflow also attempts to create or initialize the GitHub Pages site
+automatically via `actions/configure-pages` if the repository does not have a
+Pages site yet.
+
 If the repository name changes later, the Pages build keeps working without a
 code change as long as the workflow still runs in the target repository.
 
