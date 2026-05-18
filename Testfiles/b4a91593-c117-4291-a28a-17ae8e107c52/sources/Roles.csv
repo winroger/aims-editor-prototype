@@ -1,0 +1,10 @@
+_recordId,IRI,Label,Buildings_Organizations_Roles,sameAs
+rec4s8JxPHxnXR6Ow,https://icd.example.com/roles/general-contractor,General Contractor,recTcB7BaFJEOKPwz,https://identifier.buildingsmart.org/uri/nbs/uniclass2015/1/class/Ro_30_10_20
+recBad166HV4q5J9S,https://icd.example.com/roles/manufacturer,Manufacturer,"rectt9G6bCyvsqgwJ,reci6W0ZSA8fUcK5I",https://identifier.buildingsmart.org/uri/nbs/uniclass2015/1/class/Ro_30_40_54
+recTCWwLjKnyLapsG,https://icd.example.com/roles/developer,Developer,recLv4VYtK7qS4VBS,
+recUCf9oxrUodJnpR,https://icd.example.com/roles/architect,Architect,"recqqg9hRlNLclOoE,recMyaoL2mMXihJ0q,reco69Qf0RO2pPgUH,recfp51375qn8proi,reckLwHrjgRAacMdV,recBBbD616ywCzwdK",https://identifier.buildingsmart.org/uri/nbs/uniclass2015/1/class/Ro_50_10_03
+recWpvLKiGdUvCm2g,https://icd.example.com/roles/client,Client,"recKOea6lke2BemFu,recNKGOc4ABliCyyq",https://identifier.buildingsmart.org/uri/nbs/uniclass2015/1/class/Ro_10_20_14
+recmBly71EV5HyLWq,https://icd.example.com/roles/installer,Installer,rectt9G6bCyvsqgwJ,
+recmopVriBaURSLsG,https://icd.example.com/roles/timber-supplier,Timber Supplier,recNatjTdXbWGm9oP,https://identifier.buildingsmart.org/uri/nbs/uniclass2015/1/class/Ro_30_40_86
+recpyxwn6MndlO95u,https://icd.example.com/roles/timber-contractor,Timber Contractor,recCg9b03qyTwprUE,https://identifier.buildingsmart.org/uri/nbs/uniclass2015/1/class/Ro_30_10_20
+recqAvtb63hgc3Ge6,https://icd.example.com/roles/engineer,Engineer,"recMyaoL2mMXihJ0q,recR9yLi1QC6grXGH,recKOea6lke2BemFu,recdlvZtMCwlYbOpj",https://identifier.buildingsmart.org/uri/nbs/uniclass2015/1/class/Ro_50_20

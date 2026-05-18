@@ -33,6 +33,12 @@ export interface PropertyShape {
   maxCount?: number
   pattern?: string
   order?: number
+  /** True when this property comes from a node-level inherited shape. */
+  inherited?: boolean
+  /** IRI of the inherited shape this property came from. */
+  inheritedFromShapeIri?: string
+  /** Label of the inherited shape this property came from. */
+  inheritedFromShapeLabel?: string
 }
 
 /** Parsed sh:NodeShape with its property shapes. */
@@ -41,6 +47,8 @@ export interface NodeShape {
   nodeId: NamedNode | BlankNode
   /** dcterms:title or rdfs:label */
   label?: string
+  /** rdfs:label of the shape or target class when present in the profile. */
+  rdfsLabel?: string
   /** dcterms:description */
   description?: string
   /** dcterms:creator */
@@ -49,6 +57,8 @@ export interface NodeShape {
   targetClass?: NamedNode
   /** Associated property shapes */
   properties: PropertyShape[]
+  /** Node-level inherited shapes declared via sh:node on the NodeShape itself. */
+  inheritedShapeIris?: string[]
   /** Source profile IRI (the file/import this shape came from) */
   sourceProfileIri?: string
 }
@@ -56,8 +66,9 @@ export interface NodeShape {
 /**
  * Shape classification for UI routing:
  *
- * - `data`      Has at least one property with sh:datatype or sh:nodeKind sh:Literal.
- *               These map directly from CSV columns.
+ * - `data`      Has at least one directly mappable property (for example
+ *               sh:datatype, sh:nodeKind, sh:in, or any other non-sh:node field).
+ *               These map directly from CSV columns or form-like inputs.
  * - `reference` Only has sh:node FK properties (no direct literal values).
  *               Placed on canvas but never needs a separate CSV source.
  * - `form`      Metadata shapes (sh:targetClass dcat:Dataset / DCAT / Collection Dataset).
@@ -77,11 +88,9 @@ export function classifyShape(shape: NodeShape): ShapeKind {
   // Shapes targeting DCAT/VoID Dataset → metadata form
   if (shape.targetClass && FORM_TARGET_CLASSES.has(shape.targetClass.value)) return 'form'
 
-  // Has at least one literal-value property
-  const hasLiteralProp = shape.properties.some(
-    p => p.path && (p.datatype || p.nodeKind?.value === 'http://www.w3.org/ns/shacl#Literal'),
-  )
-  if (hasLiteralProp) return 'data'
+  // Any directly mappable property keeps the shape in the regular data lane.
+  const hasDirectValueProp = shape.properties.some(p => p.path && !p.node)
+  if (hasDirectValueProp) return 'data'
 
   // Has only sh:node FK properties
   const hasFkProp = shape.properties.some(p => p.node)
@@ -121,8 +130,7 @@ export class ApplicationProfile {
     return Array.from(this.profiles.values())
   }
 
-  /** All NodeShapes across all profiles, de-duplicated by IRI. */
-  allNodeShapes(): NodeShape[] {
+  rawNodeShapes(): NodeShape[] {
     const seen = new Set<string>()
     const result: NodeShape[] = []
     for (const profile of this.profiles.values()) {
@@ -137,13 +145,65 @@ export class ApplicationProfile {
     return result
   }
 
+  /** All NodeShapes across all profiles, de-duplicated by IRI. */
+  allNodeShapes(): NodeShape[] {
+    return this.rawNodeShapes().map(ns => this.resolveNodeShape(ns.nodeId.value))
+  }
+
   /** Looks up a NodeShape by IRI (used to resolve sh:node references). */
   findNodeShape(iri: string): NodeShape | undefined {
-    for (const profile of this.profiles.values()) {
-      const found = profile.nodeShapes.find(ns => ns.nodeId.value === iri)
-      if (found) return found
+    const found = this.rawNodeShapes().find(ns => ns.nodeId.value === iri)
+    return found ? this.resolveNodeShape(found.nodeId.value) : undefined
+  }
+
+  inheritedImportedNodeShapeIds(): Set<string> {
+    const hidden = new Set<string>()
+    const rawShapes = this.rawNodeShapes()
+    const rawByIri = new Map(rawShapes.map(shape => [shape.nodeId.value, shape]))
+
+    for (const shape of rawShapes) {
+      for (const inheritedIri of shape.inheritedShapeIris ?? []) {
+        const inheritedShape = rawByIri.get(inheritedIri)
+        if (!inheritedShape) continue
+        if (inheritedShape.sourceProfileIri && inheritedShape.sourceProfileIri !== shape.sourceProfileIri) {
+          hidden.add(inheritedIri)
+        }
+      }
     }
-    return undefined
+
+    return hidden
+  }
+
+  resolveNodeShape(iri: string, visited = new Set<string>()): NodeShape {
+    const rawShape = this.rawNodeShapes().find(ns => ns.nodeId.value === iri)
+    if (!rawShape) throw new Error(`Unknown NodeShape: ${iri}`)
+    if (visited.has(iri)) return rawShape
+
+    const nextVisited = new Set(visited)
+    nextVisited.add(iri)
+
+    const ownProperties = rawShape.properties.map(property => ({ ...property }))
+    const ownKeys = new Set(ownProperties.map(propertyKeyFor))
+    const inheritedProperties: PropertyShape[] = []
+
+    for (const inheritedIri of rawShape.inheritedShapeIris ?? []) {
+      const inheritedShape = this.resolveNodeShape(inheritedIri, nextVisited)
+      for (const property of inheritedShape.properties) {
+        const key = propertyKeyFor(property)
+        if (ownKeys.has(key)) continue
+        inheritedProperties.push({
+          ...property,
+          inherited: true,
+          inheritedFromShapeIri: property.inheritedFromShapeIri ?? inheritedShape.nodeId.value,
+          inheritedFromShapeLabel: property.inheritedFromShapeLabel ?? inheritedShape.label,
+        })
+      }
+    }
+
+    return {
+      ...rawShape,
+      properties: [...inheritedProperties, ...ownProperties],
+    }
   }
 
   /** True when at least one shape has been loaded. */
@@ -215,19 +275,26 @@ export function parseShaclProfile(
 }
 
 function extractNodeShape(nodeId: NamedNode, store: Store): NodeShape {
-  const shape: NodeShape = { nodeId, properties: [] }
+  const shape: NodeShape = { nodeId, properties: [], inheritedShapeIris: [] }
 
   store.match(nodeId, null, null, null).forEach(t => {
     const p = t.predicate.value
     const obj = t.object as Literal | NamedNode | BlankNode
-    if (p === DCT_TITLE.value || p === RDFS_LABEL.value) {
+    if (p === DCT_TITLE.value) {
       if (obj.termType === 'Literal' && !shape.label) shape.label = obj.value
+    } else if (p === RDFS_LABEL.value) {
+      if (obj.termType === 'Literal') {
+        if (!shape.rdfsLabel) shape.rdfsLabel = obj.value
+        if (!shape.label) shape.label = obj.value
+      }
     } else if (p === DCT_DESCRIPTION.value) {
       if (obj.termType === 'Literal') shape.description = obj.value
     } else if (p === DCT_CREATOR.value) {
       if (obj.termType === 'Literal') shape.creator = obj.value
     } else if (p === SH_TARGET_CLASS.value) {
       if (obj.termType === 'NamedNode') shape.targetClass = obj
+    } else if (p === SH_NODE.value) {
+      if (obj.termType === 'NamedNode') shape.inheritedShapeIris?.push(obj.value)
     } else if (p === SH_PROPERTY.value) {
       shape.properties.push(extractPropertyShape(obj as NamedNode | BlankNode, store))
     }
@@ -258,4 +325,8 @@ function extractPropertyShape(nodeId: NamedNode | BlankNode, store: Store): Prop
   })
 
   return ps
+}
+
+function propertyKeyFor(property: PropertyShape): string {
+  return property.path?.value ?? property.nodeId.value
 }

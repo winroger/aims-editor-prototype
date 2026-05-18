@@ -24,6 +24,62 @@ function resolvePagesBase(mode: string): string {
   return '/'
 }
 
+function manualVendorChunks(id: string): string | undefined {
+  if (!id.includes('node_modules')) return undefined
+
+  if (
+    id.includes('/node_modules/vue/')
+    || id.includes('/node_modules/vue-router/')
+    || id.includes('/node_modules/pinia/')
+  ) {
+    return 'vendor-vue'
+  }
+
+  if (
+    id.includes('/node_modules/primevue/')
+    || id.includes('/node_modules/@primevue/')
+    || id.includes('/node_modules/@primeuix/')
+    || id.includes('/node_modules/primeicons/')
+  ) {
+    return 'vendor-primevue'
+  }
+
+  if (
+    id.includes('/node_modules/@vue-flow/')
+    || id.includes('/node_modules/@dagrejs/dagre/')
+  ) {
+    return 'vendor-vueflow'
+  }
+
+  if (
+    id.includes('/node_modules/@ulb-darmstadt/shacl-form/')
+  ) {
+    return 'vendor-shacl-form'
+  }
+
+  if (
+    id.includes('/node_modules/leaflet')
+    || id.includes('/node_modules/leaflet-editable/')
+  ) {
+    return 'vendor-leaflet'
+  }
+
+  if (id.includes('/node_modules/localforage/')) {
+    return 'vendor-storage'
+  }
+
+  if (id.includes('/node_modules/rdflib/')) return 'vendor-rdflib'
+  if (id.includes('/node_modules/jsonld/')) return 'vendor-jsonld'
+  if (id.includes('/node_modules/ro-crate/')) return 'vendor-ro-crate'
+  if (id.includes('/node_modules/@rdfjs/') || id.includes('/node_modules/n3/')) return 'vendor-rdfjs'
+
+  if (id.includes('/node_modules/jszip/')) {
+    return 'vendor-export'
+  }
+
+  return undefined
+}
+
 export default defineConfig(({ mode }) => ({
   base: resolvePagesBase(mode),
   plugins: [
@@ -53,6 +109,13 @@ export default defineConfig(({ mode }) => ({
   optimizeDeps: {
     // Pre-bundle these to ensure CJS deps see the aliased `process`.
     include: ['process/browser'],
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: manualVendorChunks,
+      },
+    },
   },
   test: {
     environment: 'happy-dom',

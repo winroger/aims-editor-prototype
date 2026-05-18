@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { CsvDataSource, AirtableDataSource } from '@/domain/DataSource'
-import { detectLinkedColumns, detectJoinTables, looksLikeRecordIds } from '@/services/linkDetector'
+import { detectLinkedColumns, detectJoinTables, looksLikeRecordIds } from '@/services/mapping/linkDetector'
 
 describe('linkDetector', () => {
   it('looksLikeRecordIds matches Airtable IDs', () => {

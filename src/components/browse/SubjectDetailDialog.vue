@@ -23,11 +23,15 @@
  */
 import { computed, ref, watch } from 'vue'
 import '@ulb-darmstadt/shacl-form'
+import { LeafletPlugin } from '@ulb-darmstadt/shacl-form/plugins/leaflet.js'
 import Dialog from 'primevue/dialog'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
-import type { BrowseModel, BrowseSubject } from '@/services/browseService'
+import type { BrowseModel, BrowseSubject } from '@/services/browse/browseService'
 import type { NodeShape } from '@/domain/NodeShape'
+import { useShaclFormViewer, type ShaclFormElement } from '@/features/shacl/useShaclFormViewer'
+
+const formsWithLeafletViewer = new WeakSet<HTMLElement>()
 
 interface Props {
   modelValue: boolean
@@ -90,10 +94,30 @@ const matchingShape = computed<NodeShape | null>(() => {
 })
 
 /** Outgoing resource refs that point to other subjects we know about. */
-const linkedSubjects = computed(() => {
+const referencedSubjectGroups = computed(() => {
   const subj = currentSubject.value
-  if (!subj) return []
-  return subj.properties.filter(p => p.isResource && p.resolvedLabel !== undefined)
+  if (!subj || !props.model) return []
+
+  const groups = new Map<string, Array<{ iri: string; label: string }>>()
+
+  for (const property of subj.properties) {
+    if (!property.isResource || property.resolvedLabel === undefined) continue
+
+    const clusterLabel = property.label || 'Linked resource'
+    const entries = groups.get(clusterLabel) ?? []
+    entries.push({
+      iri: property.value,
+      label: property.resolvedLabel,
+    })
+    groups.set(clusterLabel, entries)
+  }
+
+  return Array.from(groups.entries())
+    .map(([groupLabel, entries]) => ({
+      groupLabel,
+      entries: entries.sort((left, right) => left.label.localeCompare(right.label)),
+    }))
+    .sort((left, right) => left.groupLabel.localeCompare(right.groupLabel))
 })
 
 function openSubject(iri: string): void {
@@ -121,45 +145,31 @@ function labelFor(iri: string): string {
 }
 
 // ---------- shacl-form wiring ----------
-const formRef = ref<HTMLElement | null>(null)
+const formRef = ref<ShaclFormElement | null>(null)
 
-function applyAttrs(): void {
-  if (!formRef.value) return
-  const el = formRef.value
-  const subj = currentSubject.value
-  const shape = matchingShape.value
-
-  if (props.shapesTurtle) el.setAttribute('data-shapes', props.shapesTurtle)
-  else el.removeAttribute('data-shapes')
-
-  if (props.valuesTurtle) el.setAttribute('data-values', props.valuesTurtle)
-  else el.removeAttribute('data-values')
-
-  if (subj?.iri) el.setAttribute('data-values-subject', subj.iri)
-  else el.removeAttribute('data-values-subject')
-
-  if (shape?.nodeId.termType === 'NamedNode') {
-    el.setAttribute('data-shape-subject', shape.nodeId.value)
-  } else {
-    el.removeAttribute('data-shape-subject')
-  }
-}
-
-watch(
-  [
+useShaclFormViewer({
+  formRef,
+  watchSources: [
     visible,
     currentIri,
     () => props.shapesTurtle,
     () => props.valuesTurtle,
     matchingShape,
   ],
-  () => {
-    if (visible.value) {
-      // Defer to next microtask so the shacl-form element is in the DOM.
-      queueMicrotask(applyAttrs)
+  getShapesTurtle: () => props.shapesTurtle,
+  getValuesTurtle: () => props.valuesTurtle,
+  getValuesSubject: () => currentSubject.value?.iri,
+  getShapeSubject: () => matchingShape.value?.nodeId.termType === 'NamedNode'
+    ? matchingShape.value.nodeId.value
+    : undefined,
+  shouldApply: () => visible.value,
+  prepareElement: element => {
+    if (!formsWithLeafletViewer.has(element)) {
+      element.registerPlugin?.(new LeafletPlugin({ datatype: 'http://www.opengis.net/ont/geosparql#wktLiteral' }))
+      formsWithLeafletViewer.add(element)
     }
   },
-)
+})
 
 function localName(iri: string): string {
   const idx = Math.max(iri.lastIndexOf('#'), iri.lastIndexOf('/'))
@@ -185,9 +195,9 @@ function localName(iri: string): string {
           severity="secondary"
           outlined
           @click="goBack"
-          aria-label="Zurück"
+          aria-label="Back"
         />
-        <nav v-if="stack.length > 1" class="breadcrumb" aria-label="Navigationsverlauf">
+        <nav v-if="stack.length > 1" class="breadcrumb" aria-label="Navigation history">
           <template v-for="(iri, idx) in stack" :key="iri + idx">
             <button
               class="crumb"
@@ -220,27 +230,29 @@ function localName(iri: string): string {
             data-view
             data-collapse="open"
             data-ignore-owl-imports
-            data-language="de"
+            data-language="en"
             data-show-root-shape-label="false"
           />
         </div>
 
         <!-- Linked subjects sidebar -->
-        <aside v-if="linkedSubjects.length > 0" class="links-pane">
-          <h3>Verknüpfte Resourcen</h3>
-          <ul class="links">
-            <li v-for="(p, idx) in linkedSubjects" :key="idx">
-              <span class="link-label">{{ p.label }}</span>
-              <button class="link-btn" @click="openSubject(p.value)" :title="p.value">
-                <i class="pi pi-external-link" />
-                <span>{{ p.resolvedLabel }}</span>
-              </button>
-            </li>
-          </ul>
+        <aside v-if="referencedSubjectGroups.length > 0" class="links-pane">
+          <h3>Referenced items</h3>
+          <section v-for="group in referencedSubjectGroups" :key="group.groupLabel" class="reference-group">
+            <h4>{{ group.groupLabel }}</h4>
+            <ul class="links">
+              <li v-for="entry in group.entries" :key="`${group.groupLabel}-${entry.iri}`">
+                <button class="link-btn" @click="openSubject(entry.iri)" :title="entry.iri">
+                  <i class="pi pi-external-link" />
+                  <span>{{ entry.label }}</span>
+                </button>
+              </li>
+            </ul>
+          </section>
         </aside>
       </div>
     </div>
-    <p v-else class="empty">Kein Subjekt ausgewählt.</p>
+    <p v-else class="empty">No subject selected.</p>
   </Dialog>
 </template>
 
@@ -310,6 +322,25 @@ function localName(iri: string): string {
   position: sticky;
   top: 0;
   h3 { margin: 0 0 var(--space-2); font-size: 0.95rem; }
+}
+.reference-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+
+  & + & {
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--color-border);
+  }
+
+  h4 {
+    margin: 0;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-muted);
+  }
 }
 .links { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .link-label { display: block; font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 2px; }

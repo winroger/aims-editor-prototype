@@ -1,0 +1,41 @@
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix aps: <https://w3id.org/nfdi4ing/profiles/> .
+
+aps:e65fc010-5fe6-4d74-9333-8601c31dde5d
+  dcterms:created "2026-04-28"^^xsd:date ;
+  dcterms:creator "Roger Winkler" ;
+  dcterms:description "RO-kit stakeholder node shape for organizations involved in a building project."@en ;
+  dcterms:license <http://creativecommons.org/licenses/by/4.0/> ;
+  dcterms:subject <https://github.com/tibonto/dfgfo/410-01> ;
+  dcterms:title "RO-kit stakeholder"@en ;
+  a sh:NodeShape ;
+  rdfs:label "Stakeholder"@en ;
+  owl:imports aps:3a566450-14ce-432d-9d10-9e1c83b8477a,
+    aps:6c98fa13-18d1-4b67-8cab-bd74df4e6fa9 ;
+  sh:closed false ;
+  sh:property [
+    sh:order 1 ;
+    sh:name "Role" ;
+    sh:description "Role of the stakeholder."@en ;
+    sh:path dcat:hadRole ;
+    sh:nodeKind sh:IRI ;
+    sh:class prov:Role ;
+    sh:node aps:6c98fa13-18d1-4b67-8cab-bd74df4e6fa9 ;
+    sh:minCount 1 ;
+  ], [
+    sh:order 2 ;
+    sh:name "Organization" ;
+    sh:description "Organization acting as a stakeholder."@en ;
+    sh:path prov:agent ;
+    sh:class foaf:Organisation ;
+    sh:node aps:3a566450-14ce-432d-9d10-9e1c83b8477a ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+  ] .

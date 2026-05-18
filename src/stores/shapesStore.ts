@@ -2,15 +2,20 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { ApplicationProfile, parseShaclProfile, type NodeShape, type ShaclProfile } from '@/domain/NodeShape'
 import { classifyShape } from '@/domain/NodeShape'
-import { resolveImportsRecursive } from '@/services/profileResolver'
+import { resolveImportsRecursive } from '@/services/infrastructure/imports/profileResolver'
+import {
+  createShaclProfileSnapshots,
+  restoreProfilesFromSnapshot,
+  type ShaclProfileSnapshot,
+} from '@/services/project/projectSnapshot'
 
 /**
  * shapesStore
  *
  * Holds *data-schema* SHACL profiles only. Dataset-metadata profiles
- * (which power the <shacl-form> nodes) live in a separate `metadataStore`
- * with its own ApplicationProfile — there is no shared state between
- * the two anymore.
+ * (which power the export-side metadata forms) live in a separate
+ * `metadataStore` with its own ApplicationProfile — there is no shared
+ * state between the two anymore.
  *
  * If the user happens to load the same SHACL file in both contexts that's
  * fine: each store has its own copy and they don't interfere with each
@@ -30,6 +35,7 @@ export const useShapesStore = defineStore('shapes', () => {
   /** Shapes suitable for the Mapping canvas (data + reference kinds). */
   const canvasShapes = computed<NodeShape[]>(() =>
     nodeShapes.value.filter(ns => {
+      if (ap.value.inheritedImportedNodeShapeIds().has(ns.nodeId.value)) return false
       const k = classifyShape(ns)
       return k === 'data' || k === 'reference'
     }),
@@ -55,6 +61,16 @@ export const useShapesStore = defineStore('shapes', () => {
     await resolveAllImports()
   }
 
+  async function addProfileFromTurtle(
+    turtle: string,
+    source: string,
+    iri?: string,
+  ): Promise<void> {
+    const profile = parseShaclProfile(turtle, source, 'fetched', iri)
+    ap.value.upsert(profile)
+    await resolveAllImports()
+  }
+
   async function resolveAllImports(): Promise<void> {
     isResolvingImports.value = true
     lastResolveErrors.value = []
@@ -74,6 +90,19 @@ export const useShapesStore = defineStore('shapes', () => {
     await resolveAllImports()
   }
 
+  function createSnapshot(): ShaclProfileSnapshot[] {
+    return createShaclProfileSnapshots(profiles.value)
+  }
+
+  function restoreSnapshot(snapshot: ShaclProfileSnapshot[]): void {
+    const nextAp = new ApplicationProfile()
+    for (const profile of restoreProfilesFromSnapshot(snapshot)) {
+      nextAp.upsert(profile)
+    }
+    ap.value = nextAp
+    lastResolveErrors.value = []
+  }
+
   function reset(): void {
     ap.value = new ApplicationProfile()
     lastResolveErrors.value = []
@@ -89,8 +118,11 @@ export const useShapesStore = defineStore('shapes', () => {
     lastResolveErrors,
     removeProfile,
     addTtlFiles,
+    addProfileFromTurtle,
     resolveAllImports,
     uploadFallbackForImport,
+    createSnapshot,
+    restoreSnapshot,
     reset,
   }
 })

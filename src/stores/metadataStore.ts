@@ -1,7 +1,12 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { ApplicationProfile, parseShaclProfile, type ShaclProfile } from '@/domain/NodeShape'
-import { resolveImportsRecursive } from '@/services/profileResolver'
+import { resolveImportsRecursive } from '@/services/infrastructure/imports/profileResolver'
+import {
+  createShaclProfileSnapshots,
+  restoreProfilesFromSnapshot,
+  type ShaclProfileSnapshot,
+} from '@/services/project/projectSnapshot'
 
 /**
  * metadataStore
@@ -9,10 +14,10 @@ import { resolveImportsRecursive } from '@/services/profileResolver'
  * Holds Dataset-Metadata SHACL profiles in a separate ApplicationProfile,
  * fully decoupled from the data-schema state in shapesStore.
  *
- * Each "root" entry corresponds to one shacl-form node on the canvas.
- * Imports pulled in via owl:imports live in the same ApplicationProfile
- * (so they're available to <shacl-form> at parse time) but are NOT
- * exposed as separate roots/forms.
+ * Each "root" entry represents one active metadata profile in the export
+ * flow. Imports pulled in via owl:imports live in the same ApplicationProfile
+ * (so they're available to <shacl-form> at parse time) but are NOT exposed
+ * as separate root profiles.
  *
  * Decoupling rationale: data schemas and metadata schemas share NO state
  * with each other anymore — no flag-based filtering, no provenance hacks.
@@ -24,14 +29,16 @@ export const useMetadataStore = defineStore('metadata', () => {
   const ap = ref<ApplicationProfile>(new ApplicationProfile())
 
   /**
-   * IRIs of user-chosen "root" metadata profiles. One shacl-form node
-   * is rendered per entry on the canvas. Imports of each root live
-   * inside `ap` but are not listed here.
+    * IRIs of user-chosen "root" metadata profiles. The active export
+    * workflow renders one metadata form per root profile outside the
+    * mapping canvas. Imports of each root live inside `ap` but are not
+    * listed here.
    */
   const rootIris = ref<string[]>([])
 
   const isResolvingImports = ref(false)
   const lastResolveErrors = ref<{ iri: string; error: string }[]>([])
+  const metadataTurtle = ref<Record<string, string>>({})
 
   /** Every loaded profile (roots + imports). */
   const profiles = computed<ShaclProfile[]>(() => ap.value.list())
@@ -69,8 +76,8 @@ export const useMetadataStore = defineStore('metadata', () => {
 
   /**
    * Adds a metadata profile from raw Turtle (e.g. a bundled catalog
-   * entry). The profile is registered as a "root" — i.e. one shacl-form
-   * is rendered for it. Imports are resolved automatically.
+    * entry). The profile is registered as a "root" for the export-side
+    * metadata workflow. Imports are resolved automatically.
    */
   async function addRootFromTurtle(
     turtle: string,
@@ -106,16 +113,55 @@ export const useMetadataStore = defineStore('metadata', () => {
   function removeRoot(iri: string): void {
     rootIris.value = rootIris.value.filter(r => r !== iri)
     ap.value.profiles.delete(iri)
+    delete metadataTurtle.value[iri]
+  }
+
+  function setMetadataTurtle(profileIri: string, turtle: string): void {
+    if (turtle && turtle.trim().length > 0) metadataTurtle.value[profileIri] = turtle
+    else delete metadataTurtle.value[profileIri]
+  }
+
+  function getCombinedMetadataTurtle(): string {
+    return Object.values(metadataTurtle.value).filter(Boolean).join('\n\n')
+  }
+
+  function createSnapshot(): {
+    profiles: ShaclProfileSnapshot[]
+    rootIris: string[]
+    metadataTurtle: Record<string, string>
+  } {
+    return {
+      profiles: createShaclProfileSnapshots(profiles.value),
+      rootIris: [...rootIris.value],
+      metadataTurtle: { ...metadataTurtle.value },
+    }
+  }
+
+  function restoreSnapshot(snapshot: {
+    profiles: ShaclProfileSnapshot[]
+    rootIris: string[]
+    metadataTurtle: Record<string, string>
+  }): void {
+    const nextAp = new ApplicationProfile()
+    for (const profile of restoreProfilesFromSnapshot(snapshot.profiles)) {
+      nextAp.upsert(profile)
+    }
+    ap.value = nextAp
+    rootIris.value = [...snapshot.rootIris]
+    metadataTurtle.value = { ...snapshot.metadataTurtle }
+    lastResolveErrors.value = []
   }
 
   function reset(): void {
     ap.value = new ApplicationProfile()
     rootIris.value = []
     lastResolveErrors.value = []
+    metadataTurtle.value = {}
   }
 
   return {
     ap,
+    metadataTurtle,
     profiles,
     rootIris,
     rootProfiles,
@@ -126,6 +172,10 @@ export const useMetadataStore = defineStore('metadata', () => {
     addRootFromTurtle,
     addRootsFromFiles,
     removeRoot,
+    setMetadataTurtle,
+    getCombinedMetadataTurtle,
+    createSnapshot,
+    restoreSnapshot,
     reset,
   }
 })

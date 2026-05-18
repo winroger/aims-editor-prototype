@@ -1,10 +1,8 @@
 <script setup lang="ts">
 /**
- * BrowseView — list and card view over generated RDF subjects.
+ * BrowseView — card, list, and Turtle view over generated RDF subjects.
  *
- * On mount: regenerates RDF + runs SHACL validation automatically. The
- * validation report can be opened in a dialog via a toolbar button —
- * users no longer need to switch to a separate "Daten" view.
+ * On mount: regenerates RDF automatically from the current mapping.
  *
  * Cross-references between subjects are rendered with the referenced
  * subject's resolved label (resolvedLabel from browseService) instead
@@ -12,30 +10,28 @@
  * shows "Bosch Capdeferro Architecture".
  *
  * The list view pivots properties into table columns: each unique
- * predicate within a class group becomes a column whose header shows
- * the human label on top and the property path underneath.
+ * predicate within the currently visible subject set becomes a column
+ * whose header shows the human label on top and the property path underneath.
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useShapesStore } from '@/stores/shapesStore'
 import { useDataStore } from '@/stores/dataStore'
 import { useMappingStore } from '@/stores/mappingStore'
-import { generateRdf, serializeGraph } from '@/services/rdfGenerator'
-import { buildBrowseModel, type BrowseModel, type BrowseSubject, type BrowseClassGroup, type BrowsePropertyValue } from '@/services/browseService'
-import { validateMapping, type ValidationResult } from '@/services/shaclValidator'
+import { generateRdf, serializeGraph } from '@/services/rdf/rdfGenerator'
+import { buildBrowseModel, type BrowseModel, type BrowseSubject, type BrowsePropertyValue } from '@/services/browse/browseService'
 import Message from 'primevue/message'
 import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import SelectButton from 'primevue/selectbutton'
-import MultiSelect from 'primevue/multiselect'
 import Tag from 'primevue/tag'
-import Dialog from 'primevue/dialog'
-import ValidationResultPanel from '@/components/data/ValidationResultPanel.vue'
+import { useToast } from 'primevue/usetoast'
 import SubjectDetailDialog from '@/components/browse/SubjectDetailDialog.vue'
 
 const shapesStore = useShapesStore()
 const dataStore = useDataStore()
 const mappingStore = useMappingStore()
+const toast = useToast()
 const { ap, hasShapes, nodeShapes, profiles } = storeToRefs(shapesStore)
 const { sources } = storeToRefs(dataStore)
 
@@ -53,7 +49,6 @@ const canBrowse = computed(() =>
 
 // ---------- RDF + validation, auto-built from current state ----------
 const model = ref<BrowseModel | null>(null)
-const validationResult = ref<ValidationResult | null>(null)
 const ttlOutput = ref('')
 const generationError = ref<string | null>(null)
 const isGenerating = ref(false)
@@ -61,14 +56,12 @@ const isGenerating = ref(false)
 async function regenerate(): Promise<void> {
   if (!canBrowse.value) {
     model.value = null
-    validationResult.value = null
     ttlOutput.value = ''
     return
   }
   isGenerating.value = true
   generationError.value = null
   try {
-    validationResult.value = validateMapping(ap.value, mappingStore.state, sources.value)
     const result = generateRdf(ap.value, mappingStore.state, sources.value)
     model.value = buildBrowseModel(result.store, nodeShapes.value)
     ttlOutput.value = await serializeGraph(result.store, 'text/turtle')
@@ -93,77 +86,77 @@ watch(
   regenerate,
 )
 
-// ---------- Validation report dialog ----------
-const reportOpen = ref(false)
-const validationSeverity = computed<'success' | 'warn' | 'error'>(() => {
-  if (!validationResult.value) return 'success'
-  if (validationResult.value.errorCount > 0) return 'error'
-  if (validationResult.value.warningCount > 0) return 'warn'
-  return 'success'
-})
-const validationLabel = computed(() => {
-  if (!validationResult.value) return 'Validierung läuft…'
-  const v = validationResult.value
-  if (v.errorCount > 0) return `${v.errorCount} Verletzung(en)`
-  if (v.warningCount > 0) return `${v.warningCount} Warnung(en)`
-  return 'Alles gültig'
-})
-
 // ---------- View state ----------
-const layout = ref<'cards' | 'list'>('cards')
+const layout = ref<'cards' | 'list' | 'ttl'>('cards')
 const layoutOptions = [
-  { value: 'cards', icon: 'pi pi-th-large', label: 'Karten' },
-  { value: 'list',  icon: 'pi pi-list',     label: 'Liste' },
+  { value: 'cards', icon: 'pi pi-th-large', label: 'Cards' },
+  { value: 'list',  icon: 'pi pi-list',     label: 'List' },
+  { value: 'ttl',   icon: 'pi pi-code',     label: 'TTL' },
 ]
 const search = ref('')
-/** Selected class IRIs; empty = show all. */
-const selectedClasses = ref<string[]>([])
+const selectedClass = ref('')
 
-// Reset class filter when groups change (e.g. after re-mapping).
-watch(model, () => { selectedClasses.value = [] })
+watch(model, () => {
+  search.value = ''
+  selectedClass.value = ''
+})
 
 const classOptions = computed(() =>
-  (model.value?.groups ?? []).map(g => ({
-    value: g.classIri,
-    label: `${g.classLabel} (${g.count})`,
+  (model.value?.groups ?? []).map(group => ({
+    value: group.classIri,
+    label: group.classLabel,
   })),
 )
 
-const filteredGroups = computed(() => {
-  if (!model.value) return []
-  const groups = model.value.groups
-  const classFilter = new Set(selectedClasses.value)
-  const term = search.value.trim().toLowerCase()
-
-  return groups
-    .filter(g => classFilter.size === 0 || classFilter.has(g.classIri))
-    .map(g => {
-      const subjects = term
-        ? g.subjects.filter(s => subjectMatches(s, term))
-        : g.subjects
-      return { ...g, subjects, count: subjects.length }
-    })
-    .filter(g => g.subjects.length > 0)
+const classLabelsByIri = computed(() => {
+  const labels = new Map<string, string>()
+  for (const group of model.value?.groups ?? []) {
+    labels.set(group.classIri, group.classLabel)
+  }
+  return labels
 })
 
-function subjectMatches(s: BrowseSubject, term: string): boolean {
-  if (s.label.toLowerCase().includes(term)) return true
-  if (s.iri.toLowerCase().includes(term)) return true
-  for (const p of s.properties) {
-    if (p.value.toLowerCase().includes(term)) return true
-    if (p.label.toLowerCase().includes(term)) return true
-    if (p.resolvedLabel && p.resolvedLabel.toLowerCase().includes(term)) return true
+const allSubjects = computed<BrowseSubject[]>(() => {
+  const deduped: BrowseSubject[] = []
+  const seen = new Set<string>()
+  for (const group of model.value?.groups ?? []) {
+    for (const subject of group.subjects) {
+      if (seen.has(subject.iri)) continue
+      seen.add(subject.iri)
+      deduped.push(subject)
+    }
+  }
+  return deduped
+})
+
+const classFilteredSubjects = computed<BrowseSubject[]>(() => {
+  if (!selectedClass.value) return allSubjects.value
+  return allSubjects.value.filter(subject => subject.classes.includes(selectedClass.value))
+})
+
+function subjectMatchesSearch(subject: BrowseSubject, term: string): boolean {
+  if (subject.label.toLowerCase().includes(term)) return true
+  if (subject.iri.toLowerCase().includes(term)) return true
+  for (const property of subject.properties) {
+    if (property.value.toLowerCase().includes(term)) return true
+    if (property.label.toLowerCase().includes(term)) return true
+    if (property.resolvedLabel && property.resolvedLabel.toLowerCase().includes(term)) return true
   }
   return false
 }
 
-const visibleSubjectCount = computed(() =>
-  filteredGroups.value.reduce((acc, g) => acc + g.subjects.length, 0),
-)
+const visibleSubjects = computed(() => {
+  const term = search.value.trim().toLowerCase()
+  return classFilteredSubjects.value.filter(subject => !term || subjectMatchesSearch(subject, term))
+})
+
+const hasActiveFilters = computed(() => Boolean(search.value || selectedClass.value))
+
+const isCopying = ref(false)
 
 function clearFilters(): void {
-  selectedClasses.value = []
   search.value = ''
+  selectedClass.value = ''
 }
 
 function localName(iri: string): string {
@@ -195,13 +188,13 @@ interface Column {
 }
 
 /**
- * Builds a stable column list for a class group: union of all predicates
- * appearing on its subjects, sorted alphabetically by label. Predicates
+ * Builds a stable column list for the visible subjects: union of all predicates
+ * appearing on those subjects, sorted alphabetically by label. Predicates
  * are unique even if multiple subjects use them with different values.
  */
-function columnsFor(group: BrowseClassGroup): Column[] {
+function columnsForSubjects(subjects: BrowseSubject[]): Column[] {
   const seen = new Map<string, string>()
-  for (const subj of group.subjects) {
+  for (const subj of subjects) {
     for (const p of subj.properties) {
       if (!seen.has(p.predicate)) seen.set(p.predicate, p.label)
     }
@@ -215,17 +208,42 @@ function columnsFor(group: BrowseClassGroup): Column[] {
 function valuesForColumn(subject: BrowseSubject, predicate: string): BrowsePropertyValue[] {
   return subject.properties.filter(p => p.predicate === predicate)
 }
+
+const listColumns = computed(() =>
+  selectedClass.value ? columnsForSubjects(visibleSubjects.value) : [],
+)
+
+function classLabelsFor(subject: BrowseSubject): string[] {
+  if (subject.classes.length === 0) return ['Untyped']
+  return subject.classes.map(cls => classLabelsByIri.value.get(cls) ?? localName(cls))
+}
+
+async function copyTurtle(): Promise<void> {
+  if (!ttlOutput.value) return
+  isCopying.value = true
+  try {
+    await navigator.clipboard.writeText(ttlOutput.value)
+    toast.add({ severity: 'success', summary: 'Copied', detail: 'Turtle copied to the clipboard.', life: 2500 })
+  } catch (err) {
+    toast.add({ severity: 'error', summary: 'Copy failed', detail: err instanceof Error ? err.message : String(err), life: 4000 })
+  } finally {
+    isCopying.value = false
+  }
+}
+
 </script>
 
 <template>
-  <div class="browse-view">
+  <div class="browse-view" :class="{ 'is-ttl-layout': layout === 'ttl' }">
     <header class="view-header">
-      <h1>Browse</h1>
-      <p class="subtitle">Erkunde die generierten RDF-Subjekte gruppiert nach Klasse.</p>
+      <div>
+        <h1>Browse</h1>
+        <p class="subtitle">Inspect the generated RDF subjects as cards, a flat list, or raw Turtle.</p>
+      </div>
     </header>
 
     <Message v-if="!canBrowse" severity="warn" :closable="false">
-      Lade Profile, Daten und definiere mindestens ein Mapping, um Daten zu browsen.
+      Load profiles, data, and at least one mapping to browse generated data.
     </Message>
 
     <Message v-if="generationError" severity="error" :closable="false">
@@ -235,43 +253,48 @@ function valuesForColumn(subject: BrowseSubject, predicate: string): BrowsePrope
     <template v-if="canBrowse && model">
       <!-- Filter toolbar -->
       <div class="toolbar">
-        <span class="p-input-icon-left search-wrapper">
-          <i class="pi pi-search" />
-          <InputText
-            v-model="search"
-            placeholder="Suche in allen Eigenschaften…"
-            class="search-input"
-          />
-        </span>
+        <label class="search-filter">
+          <span>Search</span>
+          <span class="p-input-icon-left search-wrapper">
+            <i class="pi pi-search" />
+            <InputText
+              v-model="search"
+              placeholder="Search across subjects and properties..."
+              class="search-input"
+            />
+          </span>
+        </label>
 
-        <MultiSelect
-          v-model="selectedClasses"
-          :options="classOptions"
-          option-label="label"
-          option-value="value"
-          placeholder="Alle Klassen"
-          display="chip"
-          :max-selected-labels="3"
-          class="class-filter"
-        />
+        <label class="class-filter">
+          <span>Class</span>
+          <select v-model="selectedClass">
+            <option value="">All classes</option>
+            <option v-for="option in classOptions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
+          </select>
+        </label>
 
-        <SelectButton
-          v-model="layout"
-          :options="layoutOptions"
-          option-label="label"
-          option-value="value"
-          aria-label="Ansicht"
-        >
-          <template #option="slotProps">
-            <i :class="slotProps.option.icon" />
-            <span class="layout-label">{{ slotProps.option.label }}</span>
-          </template>
-        </SelectButton>
+        <label class="view-filter">
+          <span>View</span>
+          <SelectButton
+            v-model="layout"
+            :options="layoutOptions"
+            option-label="label"
+            option-value="value"
+            aria-label="Browse layout"
+          >
+            <template #option="slotProps">
+              <i :class="slotProps.option.icon" />
+              <span class="layout-label">{{ slotProps.option.label }}</span>
+            </template>
+          </SelectButton>
+        </label>
 
         <Button
-          v-if="search || selectedClasses.length > 0"
+          v-if="hasActiveFilters"
           icon="pi pi-filter-slash"
-          label="Zurücksetzen"
+          label="Reset filters"
           size="small"
           severity="secondary"
           outlined
@@ -279,147 +302,144 @@ function valuesForColumn(subject: BrowseSubject, predicate: string): BrowsePrope
         />
 
         <Button
-          icon="pi pi-shield"
-          :label="validationLabel"
+          v-if="layout === 'ttl'"
+          icon="pi pi-copy"
+          label="Copy Turtle"
           size="small"
-          :severity="validationSeverity === 'success' ? 'success' : validationSeverity === 'warn' ? 'warn' : 'danger'"
-          :loading="isGenerating"
-          @click="reportOpen = true"
+          severity="secondary"
+          outlined
+          :loading="isCopying"
+          @click="copyTurtle"
         />
 
-        <span class="status">
-          <Tag :value="`${visibleSubjectCount} / ${model.totalSubjects} Subjekte`" />
-        </span>
       </div>
 
       <!-- Empty state -->
-      <Message v-if="filteredGroups.length === 0" severity="info" :closable="false">
-        Keine Subjekte entsprechen den aktuellen Filtern.
+      <Message v-if="layout !== 'ttl' && visibleSubjects.length === 0" severity="info" :closable="false">
+        No subjects match the current filters.
       </Message>
 
-      <!-- Groups -->
-      <section v-for="group in filteredGroups" :key="group.classIri" class="group">
-        <header class="group-header">
-          <h2>{{ group.classLabel }}</h2>
-          <Tag :value="`${group.count}`" severity="info" />
-          <span class="group-iri">{{ group.classIri }}</span>
+      <section v-if="layout === 'ttl'" class="ttl-view">
+        <header class="group-header ttl-header">
+          <h2>Turtle Graph</h2>
         </header>
-
-        <!-- Card layout -->
-        <div v-if="layout === 'cards'" class="cards">
-          <article
-            v-for="subj in group.subjects"
-            :key="subj.iri"
-            class="card clickable"
-            tabindex="0"
-            role="button"
-            @click="openDetail(subj)"
-            @keydown.enter="openDetail(subj)"
-            @keydown.space.prevent="openDetail(subj)"
-          >
-            <header class="card-header">
-              <h3 :title="subj.iri">{{ subj.label }}</h3>
-              <span class="card-iri" :title="subj.iri">{{ localName(subj.iri) }}</span>
-            </header>
-            <dl v-if="subj.properties.length > 0" class="props">
-              <template v-for="(p, idx) in subj.properties" :key="`${subj.iri}-${idx}`">
-                <dt :title="p.predicate">{{ p.label }}</dt>
-                <dd>
-                  <button
-                    v-if="p.isResource && p.resolvedLabel"
-                    class="ref-btn"
-                    :title="p.value"
-                    @click.stop="openDetail({ iri: p.value, label: p.resolvedLabel, classes: [], properties: [] })"
-                  >
-                    {{ p.resolvedLabel }}
-                  </button>
-                  <a v-else-if="p.isResource" :href="p.value" target="_blank" rel="noopener" :title="p.value" @click.stop>
-                    {{ localName(p.value) }}
-                  </a>
-                  <span v-else>{{ p.value }}</span>
-                </dd>
-              </template>
-            </dl>
-            <p v-else class="empty">Keine Eigenschaften.</p>
-          </article>
-        </div>
-
-        <!-- List layout (pivot) -->
-        <div v-else class="list-table-wrapper">
-          <table class="list-table">
-            <thead>
-              <tr>
-                <th class="col-label">
-                  <div class="col-name">Label</div>
-                  <div class="col-path">@id</div>
-                </th>
-                <th
-                  v-for="col in columnsFor(group)"
-                  :key="col.predicate"
-                  :title="col.predicate"
-                >
-                  <div class="col-name">{{ col.label }}</div>
-                  <div class="col-path">{{ col.predicate }}</div>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="subj in group.subjects"
-                :key="subj.iri"
-                class="clickable-row"
-                @click="openDetail(subj)"
-              >
-                <td class="cell-label">
-                  <div class="cell-name">{{ subj.label }}</div>
-                  <div class="cell-iri" :title="subj.iri">{{ localName(subj.iri) }}</div>
-                </td>
-                <td
-                  v-for="col in columnsFor(group)"
-                  :key="col.predicate"
-                >
-                  <div
-                    v-for="(p, idx) in valuesForColumn(subj, col.predicate)"
-                    :key="idx"
-                    class="cell-value"
-                  >
-                    <button
-                      v-if="p.isResource && p.resolvedLabel"
-                      class="ref-btn"
-                      :title="p.value"
-                      @click.stop="openDetail({ iri: p.value, label: p.resolvedLabel, classes: [], properties: [] })"
-                    >
-                      {{ p.resolvedLabel }}
-                    </button>
-                    <a v-else-if="p.isResource" :href="p.value" target="_blank" rel="noopener" :title="p.value" @click.stop>
-                      {{ localName(p.value) }}
-                    </a>
-                    <span v-else>{{ p.value }}</span>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <pre class="ttl-output">{{ ttlOutput }}</pre>
       </section>
-    </template>
 
-    <!-- Validation report dialog -->
-    <Dialog
-      v-model:visible="reportOpen"
-      modal
-      header="Validierungsbericht"
-      :style="{ width: '900px', maxWidth: '95vw' }"
-    >
-      <ValidationResultPanel v-if="validationResult" :result="validationResult" />
-      <Message v-else severity="info" :closable="false">
-        Noch keine Validierung verfügbar.
-      </Message>
-      <details v-if="ttlOutput" class="ttl-details">
-        <summary>Generiertes Turtle anzeigen</summary>
-        <pre class="ttl-output"><code>{{ ttlOutput }}</code></pre>
-      </details>
-    </Dialog>
+      <!-- Card layout -->
+      <div v-else-if="layout === 'cards'" class="cards">
+        <article
+          v-for="subject in visibleSubjects"
+          :key="subject.iri"
+          class="card clickable"
+          tabindex="0"
+          role="button"
+          @click="openDetail(subject)"
+          @keydown.enter="openDetail(subject)"
+          @keydown.space.prevent="openDetail(subject)"
+        >
+          <header class="card-header">
+            <h3 :title="subject.iri">{{ subject.label }}</h3>
+            <span class="card-iri" :title="subject.iri">{{ localName(subject.iri) }}</span>
+          </header>
+          <div class="subject-classes">
+            <Tag v-for="classLabel in classLabelsFor(subject)" :key="`${subject.iri}-${classLabel}`" :value="classLabel" severity="info" />
+          </div>
+          <dl v-if="subject.properties.length > 0" class="props">
+            <template v-for="(property, idx) in subject.properties" :key="`${subject.iri}-${idx}`">
+              <dt :title="property.predicate">{{ property.label }}</dt>
+              <dd>
+                <button
+                  v-if="property.isResource && property.resolvedLabel"
+                  class="ref-btn"
+                  :title="property.value"
+                  @click.stop="openDetail({ iri: property.value, label: property.resolvedLabel, classes: [], properties: [] })"
+                >
+                  {{ property.resolvedLabel }}
+                </button>
+                <a v-else-if="property.isResource" :href="property.value" target="_blank" rel="noopener" :title="property.value" @click.stop>
+                  {{ localName(property.value) }}
+                </a>
+                <span v-else>{{ property.value }}</span>
+              </dd>
+            </template>
+          </dl>
+          <p v-else class="empty">No properties available.</p>
+        </article>
+      </div>
+
+      <!-- List layout (pivot) -->
+      <div v-else class="list-table-wrapper">
+        <table class="list-table">
+          <thead>
+            <tr>
+              <th class="col-label">
+                <div class="col-name">Label</div>
+                <div class="col-path">@id</div>
+              </th>
+              <th class="col-label">
+                <div class="col-name">Classes</div>
+                <div class="col-path">rdf:type</div>
+              </th>
+              <th
+                v-for="col in listColumns"
+                :key="col.predicate"
+                :title="col.predicate"
+              >
+                <div class="col-name">{{ col.label }}</div>
+                <div class="col-path">{{ col.predicate }}</div>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="subject in visibleSubjects"
+              :key="subject.iri"
+              class="clickable-row"
+              @click="openDetail(subject)"
+            >
+              <td class="cell-label">
+                <div class="cell-name">{{ subject.label }}</div>
+                <div class="cell-iri" :title="subject.iri">{{ localName(subject.iri) }}</div>
+              </td>
+              <td>
+                <div class="class-chip-row">
+                  <Tag
+                    v-for="classLabel in classLabelsFor(subject)"
+                    :key="`${subject.iri}-${classLabel}`"
+                    :value="classLabel"
+                    severity="info"
+                  />
+                </div>
+              </td>
+              <td
+                v-for="col in listColumns"
+                :key="col.predicate"
+              >
+                <div
+                  v-for="(property, idx) in valuesForColumn(subject, col.predicate)"
+                  :key="idx"
+                  class="cell-value"
+                >
+                  <button
+                    v-if="property.isResource && property.resolvedLabel"
+                    class="ref-btn"
+                    :title="property.value"
+                    @click.stop="openDetail({ iri: property.value, label: property.resolvedLabel, classes: [], properties: [] })"
+                  >
+                    {{ property.resolvedLabel }}
+                  </button>
+                  <a v-else-if="property.isResource" :href="property.value" target="_blank" rel="noopener" :title="property.value" @click.stop>
+                    {{ localName(property.value) }}
+                  </a>
+                  <span v-else>{{ property.value }}</span>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </template>
 
     <!-- Subject detail dialog (shacl-form viewer) -->
     <SubjectDetailDialog
@@ -436,18 +456,33 @@ function valuesForColumn(subject: BrowseSubject, predicate: string): BrowsePrope
 <style scoped lang="scss">
 .browse-view {
   max-width: 1400px;
+  width: 100%;
   margin: 0 auto;
   padding: var(--space-6) var(--space-5);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
 }
+
+.browse-view.is-ttl-layout {
+  height: calc(100vh - 2rem);
+  min-height: calc(100vh - 2rem);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.view-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
 .view-header h1 { margin: 0 0 var(--space-1); font-size: 1.75rem; }
 .subtitle { margin: 0; color: var(--color-text-muted); }
 
 .toolbar {
   display: flex;
-  align-items: center;
+  align-items: end;
   flex-wrap: wrap;
   gap: var(--space-3);
   padding: var(--space-3);
@@ -455,20 +490,54 @@ function valuesForColumn(subject: BrowseSubject, predicate: string): BrowsePrope
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
 }
-.search-wrapper {
+.search-filter,
+.class-filter,
+.view-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.search-filter {
   flex: 1 1 280px;
-  min-width: 200px;
+  min-width: 240px;
+}
+
+.search-wrapper {
+  width: 100%;
   position: relative;
   display: flex;
   align-items: center;
   i { position: absolute; left: 0.75rem; color: var(--color-text-muted); pointer-events: none; }
   .search-input { padding-left: 2.25rem; width: 100%; }
 }
-.class-filter { min-width: 240px; }
-.layout-label { margin-left: var(--space-1); }
-.status { margin-left: auto; }
 
-.group { display: flex; flex-direction: column; gap: var(--space-3); }
+.class-filter,
+.view-filter {
+  min-width: 220px;
+}
+
+.class-filter select {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 0.7rem 0.8rem;
+  font: inherit;
+}
+
+.layout-label { margin-left: var(--space-1); }
+
+.ttl-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
 .group-header {
   display: flex;
   align-items: baseline;
@@ -477,6 +546,14 @@ function valuesForColumn(subject: BrowseSubject, predicate: string): BrowsePrope
   padding-bottom: var(--space-2);
   h2 { margin: 0; font-size: 1.15rem; }
   .group-iri { font-family: var(--font-mono); font-size: 0.75rem; color: var(--color-text-muted); margin-left: auto; }
+}
+.ttl-header { border-bottom: 1px solid var(--color-border); }
+
+.subject-classes,
+.class-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .cards {
@@ -614,7 +691,9 @@ function valuesForColumn(subject: BrowseSubject, predicate: string): BrowsePrope
   padding: var(--space-3);
   font-family: var(--font-mono);
   font-size: 0.8rem;
-  max-height: 400px;
+  flex: 1;
+  min-height: 0;
+  max-height: none;
   overflow: auto;
   white-space: pre;
   margin: 0;

@@ -18,8 +18,18 @@ export interface MappingEdge {
   /** IRI of the target property path (sh:path value) */
   propertyPath: string
   /** Optional: cell-value transformation (split, prefix…) */
-  transform?: 'split-comma' | 'trim'
+  transform?: MappingTransformId
+  /** Optional second source header for two-input transforms such as lat/lng → WKT. */
+  secondarySourceHeader?: string
+  /** Optional canvas node id for transform-backed mappings. */
+  transformNodeId?: string
+  /** Optional canvas node id for direct GeoNames-backed mappings. */
+  geoNamesNodeId?: string
+  /** Optional canvas node id for direct Lobid-backed mappings. */
+  lobidNodeId?: string
 }
+
+export type MappingTransformId = string
 
 export class MappingState {
   edges: MappingEdge[] = []

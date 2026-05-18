@@ -44,5 +44,4 @@ aps:e65fc010-5fe6-4d74-9333-8601c31dde5d
         <https://identifier.buildingsmart.org/uri/nbs/uniclass2015/1/class/Ro_50_10_03> # Architect
         <https://identifier.buildingsmart.org/uri/nbs/uniclass2015/1/class/Ro_50_20_11> # Engineer
     ) ;
-  ] ;
-  sh:targetClass prov:Attribution .
+  ] .
