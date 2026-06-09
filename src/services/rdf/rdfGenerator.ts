@@ -5,6 +5,17 @@ import { classifyShape } from '@/domain/NodeShape'
 import { mappingTransformId, type MappingState } from '@/domain/Mapping'
 import type { DataSource } from '@/domain/DataSource'
 import { buildObject, buildObjects, subjectFor } from '@/services/mapping/mappingSemantics'
+import {
+  resolveExplicitHybridOwnerForSource,
+  isStagingSource,
+  normalizeStagingTurtlePrefixes,
+  registerStagingPrefixes,
+  stagingColumnsForSourceWithRelations,
+  stagingClassForSource,
+  stagingRelationshipObjectsForValue,
+  stagingSubjectForRow,
+  subjectForHybridOwnerRow,
+} from '@/services/mapping/stagingSemantics'
 import { findTransformSemanticsHandler } from '@/features/mapping/mappingExtensionRegistry'
 
 export interface GeneratedGraph {
@@ -21,7 +32,14 @@ export function generateRdf(
   const store = graph()
   ;(store as unknown as { setPrefixForURI: (p: string, u: string) => void })
     .setPrefixForURI?.('ex', 'http://example.org/')
+  registerStagingPrefixes(store, sources)
   const sourceMap = new Map(sources.map(s => [s.id, s]))
+  const allShapes = ap.allNodeShapes()
+  const hybridOwnersBySourceId = new Map(
+    sources
+      .map(source => [source.id, resolveExplicitHybridOwnerForSource(source, mapping, allShapes)] as const)
+      .filter((entry): entry is readonly [string, NonNullable<ReturnType<typeof resolveExplicitHybridOwnerForSource>>] => Boolean(entry[1])),
+  )
   const subjects = new Set<string>()
 
   for (const shape of ap.allNodeShapes()) {
@@ -77,6 +95,41 @@ export function generateRdf(
     }
   }
 
+  for (const source of sources) {
+    if (!isStagingSource(source)) continue
+
+    const stagingColumns = stagingColumnsForSourceWithRelations(source, mapping, sources)
+    if (stagingColumns.length === 0) continue
+
+    const hybridOwner = hybridOwnersBySourceId.get(source.id)
+    const stagingClass = hybridOwner ? undefined : stagingClassForSource(source)
+    for (let rowIdx = 0; rowIdx < source.rows.length; rowIdx++) {
+      const row = source.rows[rowIdx]
+      const subject = hybridOwner
+        ? subjectForHybridOwnerRow(hybridOwner, source, row, rowIdx)
+        : stagingSubjectForRow(source, rowIdx)
+      if (!subject) continue
+
+      subjects.add(subject.value)
+      if (stagingClass) store.add(subject, RDF_TYPE, stagingClass)
+
+      for (const column of stagingColumns) {
+        const headerIdx = source.headers.indexOf(column.header)
+        if (headerIdx < 0) continue
+        const cellValue = row[headerIdx]
+        if (cellValue === null || cellValue === undefined || cellValue === '') continue
+
+        const relationshipObjects = stagingRelationshipObjectsForValue(column, cellValue, sources, hybridOwnersBySourceId)
+        if (relationshipObjects.length > 0) {
+          for (const object of relationshipObjects) store.add(subject, column.property, object)
+          continue
+        }
+
+        store.add(subject, column.property, buildObject(String(cellValue), undefined, undefined, undefined))
+      }
+    }
+  }
+
   return {
     store,
     subjectCount: subjects.size,
@@ -91,7 +144,7 @@ export function serializeGraph(
   return new Promise((resolve, reject) => {
     serialize(null, store, undefined, format, (err, str) => {
       if (err) reject(err)
-      else resolve(str ?? '')
+      else resolve(format === 'text/turtle' ? normalizeStagingTurtlePrefixes(str ?? '') : (str ?? ''))
     })
   })
 }

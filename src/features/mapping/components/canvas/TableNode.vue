@@ -4,10 +4,13 @@ import { Handle, Position } from '@vue-flow/core'
 import type { DataSource } from '@/domain/DataSource'
 import { CANVAS_NODE_COLORS } from '@/features/mapping/canvasTheme'
 import { useDataStore } from '@/stores/dataStore'
+import { useMappingStore } from '@/stores/mappingStore'
 import { detectLinkedColumns, type LinkedColumnInfo } from '@/services/mapping/linkDetector'
+import { hasExplicitSourceHeaderMapping } from '@/services/mapping/stagingSemantics'
 
 const props = defineProps<{ data: { source: DataSource; onPreview?: () => void } }>()
 const dataStore = useDataStore()
+const mappingStore = useMappingStore()
 
 /** Detected linked-record columns, indexed by header name. */
 const linkInfo = computed<Map<string, LinkedColumnInfo>>(() => {
@@ -16,6 +19,32 @@ const linkInfo = computed<Map<string, LinkedColumnInfo>>(() => {
   for (const info of detected) map.set(info.header, info)
   return map
 })
+
+function toggleStagingColumn(header: string): void {
+  if (isMappedColumn(header)) return
+  const active = mappingStore.isStagingColumnActive(props.data.source.id, header)
+  mappingStore.setStagingColumnActive(props.data.source.id, header, !active)
+}
+
+function isStagingColumnActive(header: string): boolean {
+  return mappingStore.isStagingColumnActive(props.data.source.id, header)
+}
+
+function isMappedColumn(header: string): boolean {
+  return hasExplicitSourceHeaderMapping(mappingStore.state, props.data.source.id, header)
+}
+
+function stagingStateForHeader(header: string): 'mapped' | 'staging' | 'disabled' {
+  if (isMappedColumn(header)) return 'mapped'
+  return isStagingColumnActive(header) ? 'staging' : 'disabled'
+}
+
+function stagingTitleForHeader(header: string): string {
+  const state = stagingStateForHeader(header)
+  if (state === 'mapped') return 'Column is mapped and always included'
+  if (state === 'staging') return 'Disable staging column'
+  return 'Enable staging column'
+}
 </script>
 
 <template>
@@ -55,10 +84,24 @@ const linkInfo = computed<Map<string, LinkedColumnInfo>>(() => {
         v-for="header in data.source.headers"
         :key="header"
         class="row"
-        :class="{ 'is-link': linkInfo.has(header) }"
+        :class="[
+          { 'is-link': linkInfo.has(header) },
+          `is-${stagingStateForHeader(header)}`,
+        ]"
       >
         <i v-if="linkInfo.has(header)" class="pi pi-link link-icon" />
         <span class="header-name">{{ header }}</span>
+        <button
+          class="staging-toggle"
+          type="button"
+          :class="`is-${stagingStateForHeader(header)}`"
+          :title="stagingTitleForHeader(header)"
+          :aria-pressed="stagingStateForHeader(header) !== 'disabled'"
+          :disabled="isMappedColumn(header)"
+          @click.stop="toggleStagingColumn(header)"
+        >
+          <i :class="stagingStateForHeader(header) === 'disabled' ? 'pi pi-times-circle' : 'pi pi-check-circle'" />
+        </button>
         <Handle
           :id="`h:${header}`"
           type="source"
@@ -130,13 +173,60 @@ header {
     background: var(--table-link-bg);
     &:hover { background: var(--table-link-hover-bg); }
   }
+
   &:not(.is-link):hover { background: var(--color-surface-2); }
+
+  &.is-disabled {
+    opacity: 0.62;
+  }
 }
 
 .link-icon {
   font-size: 0.75rem;
   color: var(--table-link-color);
   flex-shrink: 0;
+}
+
+.staging-toggle {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-1);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+
+  &:hover {
+    color: var(--color-text);
+    border-color: var(--table-header-bg);
+  }
+
+  &.is-staging {
+    background: #fff7ed;
+    border-color: #fdba74;
+    color: #c2410c;
+  }
+
+  &.is-mapped {
+    background: #f0fdf4;
+    border-color: #86efac;
+    color: #15803d;
+    cursor: default;
+  }
+
+  &.is-disabled {
+    background: #f3f4f6;
+    border-color: #d1d5db;
+    color: #6b7280;
+  }
+
+  &:disabled {
+    opacity: 1;
+  }
 }
 
 .header-name {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * AppView — unified main view that merges Setup + Mapping + Export.
+ * ImportView — unified main view that merges setup and mapping into the import workflow.
  *
  * Components are added via the Menubar (top): source data, target schema,
  * enrichment, transformation, and reset. The canvas itself
@@ -122,6 +122,7 @@ const { nodes, edges, nodeTypes } = useCanvasGraph({
   sources,
   canvasShapes,
   toast,
+  confirm,
   openSetupDialog,
   openTablePreview,
   openNodePreview,

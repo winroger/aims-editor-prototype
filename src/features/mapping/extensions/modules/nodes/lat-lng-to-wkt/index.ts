@@ -82,6 +82,7 @@ export const latLngToWktModule = createMappingExtensionModule({
               ],
               previewLabel: 'Preview',
               onPreview: () => context.openNodePreview(node.id),
+              onDelete: () => context.deleteNode(node.id),
             },
           }
         }),

@@ -11,7 +11,13 @@
  */
 import { type Store, type NamedNode, type BlankNode, type Literal } from 'rdflib'
 import { RDF_TYPE, RDFS_LABEL, DCT_TITLE } from '@/domain/rdfConstants'
+import type { DataSource } from '@/domain/DataSource'
 import type { NodeShape } from '@/domain/NodeShape'
+import {
+  airtablePrimaryFieldName,
+  isAirtableSource,
+} from '@/features/mapping/extensions/modules/source-data/airtable/workflow'
+import { stagingSubjectForRow } from '@/services/mapping/stagingSemantics'
 
 const SCHEMA_NAME_IRI = 'http://schema.org/name'
 const FOAF_NAME_IRI = 'http://xmlns.com/foaf/0.1/name'
@@ -76,6 +82,31 @@ export interface BrowseModel {
   groups: BrowseClassGroup[]
 }
 
+function sourceLabelFallbacks(sources: readonly DataSource[]): Map<string, string> {
+  const labels = new Map<string, string>()
+
+  for (const source of sources) {
+    if (!isAirtableSource(source)) continue
+
+    const primaryFieldName = airtablePrimaryFieldName(source)
+    if (!primaryFieldName) continue
+
+    const headerIndex = source.headers.indexOf(primaryFieldName)
+    if (headerIndex < 0) continue
+
+    for (let rowIdx = 0; rowIdx < source.rows.length; rowIdx += 1) {
+      const rawValue = source.rows[rowIdx]?.[headerIndex]
+      const label = typeof rawValue === 'string' ? rawValue.trim() : String(rawValue ?? '').trim()
+      const subject = stagingSubjectForRow(source, rowIdx)
+      if (!label) continue
+      if (!subject) continue
+      labels.set(subject.value, label)
+    }
+  }
+
+  return labels
+}
+
 function localName(iri: string): string {
   const idx = Math.max(iri.lastIndexOf('#'), iri.lastIndexOf('/'))
   return idx >= 0 ? iri.slice(idx + 1) : iri
@@ -103,7 +134,7 @@ function propertyLabelFor(predicate: string, shapes: readonly NodeShape[]): stri
  * collected by walking all `rdf:type` triples; if a subject has no type
  * triple it is grouped under an "Untyped" pseudo-class.
  */
-export function buildBrowseModel(store: Store, shapes: readonly NodeShape[]): BrowseModel {
+export function buildBrowseModel(store: Store, shapes: readonly NodeShape[], sources: readonly DataSource[] = []): BrowseModel {
   const stmts = (store as unknown as { statements: Array<{
     subject: NamedNode | BlankNode
     predicate: NamedNode
@@ -149,9 +180,10 @@ export function buildBrowseModel(store: Store, shapes: readonly NodeShape[]): Br
 
   const subjectLabels = new Map<string, string>()
   const subjectUsedLabelPredicate = new Map<string, string | null>()
+  const fallbackLabels = sourceLabelFallbacks(sources)
   for (const subjIri of allSubjects) {
     const { label, usedPredicate } = resolveLabel(subjIri, subjectProps.get(subjIri))
-    subjectLabels.set(subjIri, label)
+    subjectLabels.set(subjIri, usedPredicate ? label : (fallbackLabels.get(subjIri) ?? label))
     subjectUsedLabelPredicate.set(subjIri, usedPredicate)
   }
 

@@ -4,6 +4,11 @@ import { MappingState } from '@/domain/Mapping'
 import { airtableSource, csvSource } from '@/test/dataSources'
 import { generateRdf, serializeGraph } from '@/services/rdf/rdfGenerator'
 import {
+  ARDMP_STAGING_CLASS_BASE,
+  ARDMP_STAGING_INSTANCE_BASE,
+  ARDMP_STAGING_PROPERTY_BASE,
+} from '@/services/mapping/stagingSemantics'
+import {
   createMinimalExportMapping,
   createMinimalExportProfile,
   createMinimalExportSource,
@@ -73,6 +78,18 @@ ex:PlaceShape a sh:NodeShape ;
   sh:property [ sh:name "Place label" ; sh:path rdfs:label ; sh:datatype xsd:string ] .
 `
 
+const HYBRID_LOCATION_SHAPE = `
+@prefix sh:  <http://www.w3.org/ns/shacl#> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix geo: <http://www.opengis.net/ont/geosparql#> .
+@prefix ex:  <http://example.org/> .
+
+ex:LocationShape a sh:NodeShape ;
+  dct:title "Location" ;
+  sh:targetClass dct:Location ;
+  sh:property [ sh:name "Geometry" ; sh:path geo:asWKT ; sh:datatype geo:wktLiteral ] .
+`
+
 describe('rdfGenerator', () => {
   it('generates one subject per CSV row with a type and mapped properties', async () => {
     const ap = new ApplicationProfile()
@@ -92,7 +109,7 @@ describe('rdfGenerator', () => {
 
     const result = generateRdf(ap, mapping, [csv])
     expect(result.subjectCount).toBe(2)
-    expect(result.tripleCount).toBeGreaterThanOrEqual(6) // 2 type + 2 name + 2 email
+    expect(result.tripleCount).toBeGreaterThanOrEqual(8) // explicit mapping + remaining staging id on the same subject
 
     const ttl = await serializeGraph(result.store, 'text/turtle')
     expect(ttl).toContain('Alice')
@@ -110,8 +127,8 @@ describe('rdfGenerator', () => {
     const mapping = new MappingState()
     mapping.addOrReplace({ sourceId: 'people', sourceHeader: 'Email', shapeIri: 'http://example.org/PersonShape', propertyPath: 'http://example.org/email' })
     const result = generateRdf(ap, mapping, [csv])
-    // 1 rdf:type triple, 0 email triples (empty cell)
-    expect(result.tripleCount).toBe(1)
+    // 1 explicit rdf:type triple plus the remaining staging id property on the same subject
+    expect(result.tripleCount).toBe(3)
   })
 
   it('builds FK object IRIs using targetClass, not nodeShape IRI', async () => {
@@ -285,6 +302,106 @@ describe('rdfGenerator', () => {
     expect(ttl).toContain('POINT(-122.67621 45.52345)')
   })
 
+  it('generates generic staging RDF for unmapped tabular sources', async () => {
+    const source = airtableSource('people', 'People', ['Name', 'Email'], [['Alice', 'alice@example.org']], ['recAAA'])
+
+    const result = generateRdf(new ApplicationProfile(), new MappingState(), [source])
+    const statements = result.store.match(undefined, undefined, undefined, undefined)
+    const ttl = await serializeGraph(result.store, 'text/turtle')
+
+    expect(result.subjectCount).toBe(1)
+    expect(statements.some(statement => statement.subject.value === `${ARDMP_STAGING_INSTANCE_BASE}recAAA`)).toBe(true)
+    expect(statements.some(statement => statement.object.value === `${ARDMP_STAGING_CLASS_BASE}people`)).toBe(true)
+    expect(statements.some(statement => statement.predicate.value === `${ARDMP_STAGING_PROPERTY_BASE}people__name`)).toBe(true)
+    expect(statements.some(statement => statement.predicate.value === `${ARDMP_STAGING_PROPERTY_BASE}people__email`)).toBe(true)
+    expect(statements.some(statement => statement.object.value === 'alice@example.org')).toBe(true)
+    expect(ttl).toContain('@prefix ardmp_class: <https://w3id.org/ardmp/staging/class/>.')
+    expect(ttl).toContain('@prefix ardmp_inst: <https://w3id.org/ardmp/staging/instance/>.')
+    expect(ttl).toContain('@prefix ardmp_prop: <https://w3id.org/ardmp/staging/property/>.')
+    expect(ttl).toContain('ardmp_inst:recAAA')
+    expect(ttl).toContain('ardmp_prop:people__name')
+  })
+
+  it('omits disabled generic staging columns from RDF output', async () => {
+    const source = airtableSource('people', 'People', ['Name', 'Email'], [['Alice', 'alice@example.org']], ['recAAA'])
+    const mapping = new MappingState()
+    mapping.setStagingColumnActive(source.id, 'Email', false)
+
+    const result = generateRdf(new ApplicationProfile(), mapping, [source])
+    const statements = result.store.match(undefined, undefined, undefined, undefined)
+
+    expect(statements.some(statement => statement.predicate.value === `${ARDMP_STAGING_PROPERTY_BASE}people__name`)).toBe(true)
+    expect(statements.some(statement => statement.predicate.value === `${ARDMP_STAGING_PROPERTY_BASE}people__email`)).toBe(false)
+  })
+
+  it('lets explicit profile mappings replace generic staging for the same column', async () => {
+    const ap = new ApplicationProfile()
+    ap.upsert(parseShaclProfile(SHAPE, 'shape.ttl', 'uploaded'))
+
+    const source = airtableSource('people', 'People', ['id', 'Name', 'Email'], [['p1', 'Alice', 'alice@example.org']], ['recAAA'])
+    const mapping = new MappingState()
+    mapping.addOrReplace({
+      sourceId: source.id,
+      sourceHeader: 'Name',
+      shapeIri: 'http://example.org/PersonShape',
+      propertyPath: 'http://example.org/name',
+    })
+
+    const result = generateRdf(ap, mapping, [source])
+    const ttl = await serializeGraph(result.store, 'text/turtle')
+    const statements = result.store.match(undefined, undefined, undefined, undefined)
+
+    expect(ttl).toContain('ex:name "Alice"')
+    expect(statements.some(statement => statement.predicate.value === `${ARDMP_STAGING_PROPERTY_BASE}people__email`)).toBe(true)
+    expect(statements.some(statement => statement.predicate.value === `${ARDMP_STAGING_PROPERTY_BASE}people__name`)).toBe(false)
+  })
+
+  it('emits staging record-id links as RDF resource references', () => {
+    const people = airtableSource('people', 'People', ['Name'], [['Alice']], ['recqqg9hRlNLclOoE'])
+    const projects = airtableSource('projects', 'Projects', ['Title', 'Owner'], [['My Project', 'recqqg9hRlNLclOoE']], ['recPRJ00000000000'])
+
+    const result = generateRdf(new ApplicationProfile(), new MappingState(), [people, projects])
+    const statements = result.store.match(undefined, undefined, undefined, undefined)
+    const ownerStatement = statements.find(statement =>
+      statement.subject.value === `${ARDMP_STAGING_INSTANCE_BASE}recPRJ00000000000`
+      && statement.predicate.value === `${ARDMP_STAGING_PROPERTY_BASE}projects__owner`,
+    )
+
+    expect(ownerStatement?.object.termType).toBe('NamedNode')
+    expect(ownerStatement?.object.value).toBe(`${ARDMP_STAGING_INSTANCE_BASE}recqqg9hRlNLclOoE`)
+  })
+
+  it('reuses the explicit subject for remaining staging columns when a source has one explicit target owner', () => {
+    const ap = new ApplicationProfile()
+    ap.upsert(parseShaclProfile(HYBRID_LOCATION_SHAPE, 'hybrid-location.ttl', 'uploaded'))
+
+    const source = airtableSource(
+      'locations',
+      'locations.csv',
+      ['Label', 'WKT'],
+      [['Vancouver', 'POINT(-123.1207 49.2827)']],
+      ['recLOCATION000001'],
+    )
+    const mapping = new MappingState()
+    mapping.addOrReplace({
+      sourceId: source.id,
+      sourceHeader: 'WKT',
+      shapeIri: 'http://example.org/LocationShape',
+      propertyPath: 'http://www.opengis.net/ont/geosparql#asWKT',
+    })
+
+    const result = generateRdf(ap, mapping, [source])
+    const statements = result.store.match(undefined, undefined, undefined, undefined)
+
+    expect(statements.some(statement =>
+      statement.subject.value === 'http://example.org/Location/recLOCATION000001'
+      && statement.predicate.value === 'https://w3id.org/ardmp/staging/property/locations-csv__label'
+      && statement.object.value === 'Vancouver',
+    )).toBe(true)
+    expect(statements.some(statement => statement.subject.value === `${ARDMP_STAGING_INSTANCE_BASE}recLOCATION000001`)).toBe(false)
+    expect(statements.some(statement => statement.object.value === `${ARDMP_STAGING_CLASS_BASE}locations-csv`)).toBe(false)
+  })
+
   it('generates the expected minimal export RDF fixture triples', async () => {
     const ap = new ApplicationProfile()
     const profile = createMinimalExportProfile()
@@ -294,7 +411,7 @@ describe('rdfGenerator', () => {
     const ttl = await serializeGraph(result.store, 'text/turtle')
 
     expect(result.subjectCount).toBe(2)
-    expect(result.tripleCount).toBe(8)
+    expect(result.tripleCount).toBe(10)
     expect(ttl).toContain('http://example.org/Building/')
     expect(ttl).toContain('Building A')
     expect(ttl).toContain('Building B')

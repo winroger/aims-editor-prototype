@@ -1,6 +1,10 @@
 import { TabularDataSource, type DataSource, type DataSourceOrigin } from '@/domain/DataSource'
 import { parseShaclProfile, type ShaclProfile } from '@/domain/NodeShape'
 import type { MappingEdge } from '@/domain/Mapping'
+import {
+  createEmptyStagingColumnSelectionState,
+  type StagingColumnSelectionState,
+} from '@/services/mapping/stagingSemantics'
 
 export interface DataSourceSnapshot {
   id: string
@@ -33,7 +37,114 @@ export interface UiEdgeSnapshot {
 
 export interface MappingStoreSnapshot {
   edges: MappingEdge[]
+  stagingColumns?: StagingColumnSelectionState
   extensionState: Record<string, unknown>
+}
+
+export type ExploreChartType = 'bar' | 'scatter'
+
+export interface ExploreQueryPathSegmentSnapshot {
+  predicate: string
+  label: string
+}
+
+export interface ExploreDataframeColumnSnapshot {
+  id: string
+  label: string
+  path: ExploreQueryPathSegmentSnapshot[]
+}
+
+export interface ExploreDataframeDefinitionSnapshot {
+  id: string
+  title: string
+  rootClassIri: string
+  columns: ExploreDataframeColumnSnapshot[]
+}
+
+export interface ExploreChartFieldMappingSnapshot {
+  category?: string
+  color?: string
+  label?: string
+  medianLineBasis?: 'x' | 'y'
+  size?: string
+  x?: string
+  y?: string
+}
+
+export interface ExploreChartDefinitionSnapshot {
+  id: string
+  title: string
+  chartType: ExploreChartType
+  dataframeId: string
+  fieldMapping: ExploreChartFieldMappingSnapshot
+}
+
+export interface ExploreSnapshot {
+  dataframes: ExploreDataframeDefinitionSnapshot[]
+  charts: ExploreChartDefinitionSnapshot[]
+}
+
+export function cloneExploreQueryPathSegment(
+  segment: ExploreQueryPathSegmentSnapshot,
+): ExploreQueryPathSegmentSnapshot {
+  return {
+    predicate: segment.predicate,
+    label: segment.label,
+  }
+}
+
+export function cloneExploreDataframeColumn(
+  column: ExploreDataframeColumnSnapshot,
+): ExploreDataframeColumnSnapshot {
+  return {
+    id: column.id,
+    label: column.label,
+    path: column.path.map(cloneExploreQueryPathSegment),
+  }
+}
+
+export function cloneExploreDataframeDefinition(
+  dataframe: ExploreDataframeDefinitionSnapshot,
+): ExploreDataframeDefinitionSnapshot {
+  return {
+    id: dataframe.id,
+    title: dataframe.title,
+    rootClassIri: dataframe.rootClassIri,
+    columns: dataframe.columns.map(cloneExploreDataframeColumn),
+  }
+}
+
+export function cloneExploreChartFieldMapping(
+  fieldMapping: ExploreChartFieldMappingSnapshot,
+): ExploreChartFieldMappingSnapshot {
+  return {
+    category: fieldMapping.category,
+    color: fieldMapping.color,
+    label: fieldMapping.label,
+    medianLineBasis: fieldMapping.medianLineBasis,
+    size: fieldMapping.size,
+    x: fieldMapping.x,
+    y: fieldMapping.y,
+  }
+}
+
+export function cloneExploreChartDefinition(
+  chart: ExploreChartDefinitionSnapshot,
+): ExploreChartDefinitionSnapshot {
+  return {
+    id: chart.id,
+    title: chart.title,
+    chartType: chart.chartType,
+    dataframeId: chart.dataframeId,
+    fieldMapping: cloneExploreChartFieldMapping(chart.fieldMapping),
+  }
+}
+
+export function cloneExploreSnapshot(snapshot: ExploreSnapshot | undefined): ExploreSnapshot {
+  return {
+    dataframes: (snapshot?.dataframes ?? []).map(cloneExploreDataframeDefinition),
+    charts: (snapshot?.charts ?? []).map(cloneExploreChartDefinition),
+  }
 }
 
 export interface ProjectSnapshot {
@@ -48,6 +159,7 @@ export interface ProjectSnapshot {
   metadataRootIris: string[]
   metadataTurtle: Record<string, string>
   mapping: MappingStoreSnapshot
+  explore?: ExploreSnapshot
 }
 
 function cloneRows(rows: unknown[][]): unknown[][] {
@@ -141,6 +253,23 @@ export function restoreProfilesFromSnapshot(snapshots: ShaclProfileSnapshot[]): 
 
 export function cloneMappingEdges(edges: MappingEdge[]): MappingEdge[] {
   return edges.map(normalizeMappingEdge)
+}
+
+export function cloneStagingColumns(
+  stagingColumns: StagingColumnSelectionState | undefined,
+): StagingColumnSelectionState {
+  return {
+    inactiveColumnsBySource: Object.fromEntries(
+      Object.entries(stagingColumns?.inactiveColumnsBySource ?? {}).map(([sourceId, headers]) => [sourceId, [...headers]]),
+    ),
+  }
+}
+
+export function normalizeStagingColumns(
+  stagingColumns: StagingColumnSelectionState | undefined,
+): StagingColumnSelectionState {
+  if (!stagingColumns) return createEmptyStagingColumnSelectionState()
+  return cloneStagingColumns(stagingColumns)
 }
 
 export function normalizeMappingEdge(edge: MappingEdge): MappingEdge {

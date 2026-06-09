@@ -4,6 +4,15 @@ import { classifyShape } from '@/domain/NodeShape'
 import type { DataSource } from '@/domain/DataSource'
 import { mappingTransformId, type MappingEdge, type MappingState } from '@/domain/Mapping'
 import { INSTANCE_BASE_IRI, instanceTemplateForShape, sourcePathForExport } from '@/services/mapping/mappingSemantics'
+import {
+  hybridTargetClassForOwner,
+  isStagingSource,
+  registerStagingPrefixes,
+  resolveExplicitHybridOwnerForSource,
+  stagingClassForSource,
+  stagingColumnsForSourceWithRelations,
+  stagingSubjectTemplateForSource,
+} from '@/services/mapping/stagingSemantics'
 import { findTransformSemanticsHandler } from '@/features/mapping/mappingExtensionRegistry'
 
 const RDF_TYPE = namedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#type')
@@ -44,9 +53,15 @@ export function buildRmlStore(
   sources: DataSource[],
 ): Store {
   const store = graph()
-  setPrefixes(store)
+  setPrefixes(store, sources)
 
+  const allShapes = ap.allNodeShapes()
   const sourceMap = new Map(sources.map(source => [source.id, source]))
+  const hybridOwnersBySourceId = new Map(
+    sources
+      .map(source => [source.id, resolveExplicitHybridOwnerForSource(source, mapping, allShapes)] as const)
+      .filter((entry): entry is readonly [string, NonNullable<ReturnType<typeof resolveExplicitHybridOwnerForSource>>] => Boolean(entry[1])),
+  )
 
   for (const shape of ap.allNodeShapes()) {
     const kind = classifyShape(shape)
@@ -119,15 +134,59 @@ export function buildRmlStore(
     }
   }
 
+  for (const source of sources) {
+    if (!isStagingSource(source)) continue
+
+    const stagingColumns = stagingColumnsForSourceWithRelations(source, mapping, sources)
+    const hybridOwner = hybridOwnersBySourceId.get(source.id)
+    const subjectTemplate = hybridOwner?.subjectTemplate ?? stagingSubjectTemplateForSource(source)
+    if (stagingColumns.length === 0 || !subjectTemplate) continue
+
+    const triplesMap = namedNode(`${INSTANCE_BASE_IRI}mapping/triples-map/staging-${slug(source.id)}`)
+    store.add(triplesMap, RDF_TYPE, RR_TRIPLES_MAP)
+
+    const logicalSource = blankNode()
+    store.add(triplesMap, RML_LOGICAL_SOURCE, logicalSource)
+    store.add(logicalSource, RML_SOURCE, literal(sourcePathForExport(source)))
+    store.add(logicalSource, RML_REFERENCE_FORMULATION, QL_CSV)
+
+    const subjectMap = blankNode()
+    store.add(triplesMap, RR_SUBJECT_MAP, subjectMap)
+    store.add(subjectMap, RR_TEMPLATE, literal(subjectTemplate))
+    if (!hybridOwner) store.add(subjectMap, RR_CLASS, stagingClassForSource(source))
+
+    for (const column of stagingColumns) {
+      const predicateObjectMap = blankNode()
+      const objectMap = blankNode()
+      store.add(triplesMap, RR_PREDICATE_OBJECT_MAP, predicateObjectMap)
+      store.add(predicateObjectMap, RR_PREDICATE, column.property)
+      store.add(predicateObjectMap, RR_OBJECT_MAP, objectMap)
+
+      if (column.linkedTargetSourceId) {
+        const linkedTargetOwner = hybridOwnersBySourceId.get(column.linkedTargetSourceId)
+        const linkedTargetClass = linkedTargetOwner ? hybridTargetClassForOwner(linkedTargetOwner) : undefined
+        const linkedTemplate = linkedTargetOwner
+          ? `${INSTANCE_BASE_IRI}${localNameOf(linkedTargetClass?.value ?? linkedTargetOwner.representativeShape.nodeId.value) || 'Resource'}/{${column.header}}`
+          : `https://w3id.org/ardmp/staging/instance/{${column.header}}`
+        store.add(objectMap, RR_TEMPLATE, literal(linkedTemplate))
+        store.add(objectMap, RR_TERM_TYPE, RR_IRI)
+      } else {
+        store.add(objectMap, RML_REFERENCE, literal(column.header))
+        store.add(objectMap, RR_TERM_TYPE, RR_LITERAL)
+      }
+    }
+  }
+
   return store
 }
 
-function setPrefixes(store: Store): void {
+function setPrefixes(store: Store, sources: DataSource[]): void {
   const mutableStore = store as Store & { setPrefixForURI?: (prefix: string, iri: string) => void }
   mutableStore.setPrefixForURI?.('rr', 'http://www.w3.org/ns/r2rml#')
   mutableStore.setPrefixForURI?.('rml', 'http://semweb.mmlab.be/ns/rml#')
   mutableStore.setPrefixForURI?.('ql', 'http://semweb.mmlab.be/ns/ql#')
   mutableStore.setPrefixForURI?.('rdf', 'http://www.w3.org/1999/02/22-rdf-syntax-ns#')
+  registerStagingPrefixes(store, sources)
 }
 
 function referenceTemplate(targetClass: NamedNode, reference: string): string {

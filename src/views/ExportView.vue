@@ -16,6 +16,7 @@ import { useShaclFormViewer, type ShaclFormElement } from '@/features/shacl/useS
 import { useShapesStore } from '@/stores/shapesStore'
 import { createPipelineState } from '@/services/pipeline/createPipelineState'
 import { buildRoCrateFromPipelineState } from '@/services/pipeline/buildRoCrateFromPipelineState'
+import { isCanvasVisibleDataSource } from '@/domain/DataSource'
 
 type SerializableShaclFormElement = ShaclFormElement & {
   serialize?: (format?: string) => string
@@ -61,9 +62,8 @@ const {
 })
 
 const canExport = computed(() =>
-  shapesStore.hasShapes
-  && sources.value.length > 0
-  && mappingStore.state.hasMappings,
+  sources.value.some(source => isCanvasVisibleDataSource(source))
+  || (shapesStore.hasShapes && sources.value.length > 0 && mappingStore.state.hasMappings),
 )
 
 function onEditorChange(): void {
@@ -96,14 +96,14 @@ async function exportCrate(): Promise<void> {
     downloadBlob(result.blob, result.filename)
     toast.add({
       severity: 'success',
-      summary: 'RO-Crate exportiert',
-      detail: `${result.filename} (${result.subjectCount} Subjekte, ${result.tripleCount} Triples)`,
+      summary: 'RO-Crate exported',
+      detail: `${result.filename} (${result.subjectCount} subjects, ${result.tripleCount} triples)`,
       life: 5000,
     })
   } catch (error) {
     toast.add({
       severity: 'error',
-      summary: 'Export fehlgeschlagen',
+      summary: 'Export failed',
       detail: error instanceof Error ? error.message : String(error),
       life: 5000,
     })
@@ -152,7 +152,7 @@ useShaclFormViewer({
     <header class="view-header">
       <div>
         <h1>Export</h1>
-        <p class="subtitle">Pflege die RO-Crate-Metadaten ueber das RO-kit-Datensatzprofil und exportiere anschliessend das Paket.</p>
+        <p class="subtitle">Maintain the RO-Crate metadata through the RO-kit dataset profile and then export the package.</p>
       </div>
       <Button
         icon="pi pi-download"
@@ -164,7 +164,7 @@ useShaclFormViewer({
     </header>
 
     <Message v-if="!canExport" severity="warn" :closable="false">
-      Lade Target Schema, Source Data und mindestens ein Mapping, bevor du exportierst.
+      Load source data to export a package with generic staging RDF and RML. Target schema and explicit mappings remain optional.
     </Message>
     <Message v-if="loadError" severity="error" :closable="false">
       {{ loadError }}
@@ -174,29 +174,29 @@ useShaclFormViewer({
       <section class="metadata-section">
         <header class="section-header">
           <div>
-            <h2>RO-kit Datensatz</h2>
-            <p>Gespeicherte Metadaten werden im Viewer angezeigt. Bearbeite sie explizit und uebernimm die Aenderungen mit Speichern.</p>
+            <h2>RO-kit Dataset</h2>
+            <p>Saved metadata is shown in the viewer. Edit it explicitly and apply changes by saving.</p>
           </div>
           <div class="section-actions">
             <Tag value="RO-kit dataset" severity="warn" />
             <Button
               v-if="!isEditing"
               icon="pi pi-pencil"
-              label="Bearbeiten"
+              label="Edit"
               severity="secondary"
               @click="startEditing"
             />
             <template v-else>
               <Button
                 icon="pi pi-times"
-                label="Abbrechen"
+                label="Cancel"
                 severity="secondary"
                 outlined
                 @click="cancelEditing"
               />
               <Button
                 icon="pi pi-check"
-                label="Speichern"
+                label="Save"
                 @click="saveMetadata"
               />
             </template>
@@ -205,16 +205,16 @@ useShaclFormViewer({
 
         <div v-if="isResolvingImports" class="inline-status">
           <i class="pi pi-spin pi-spinner" />
-          <span>Importe werden aufgeloest...</span>
+          <span>Resolving imports...</span>
         </div>
 
         <Message v-if="!datasetProfile" severity="info" :closable="false">
-          Das RO-kit-Datensatzprofil wird geladen.
+          The RO-kit dataset profile is loading.
         </Message>
 
         <template v-else>
           <Message v-if="!metadataTurtle && !isEditing" severity="info" :closable="false">
-            Noch keine Metadaten gespeichert. Starte ueber Bearbeiten die Erfassung fuer den Export.
+            No metadata saved yet. Start editing to capture the export metadata.
           </Message>
 
           <shacl-form
@@ -225,13 +225,13 @@ useShaclFormViewer({
             data-view
             data-collapse="open"
             data-ignore-owl-imports
-            data-language="de"
+            data-language="en"
             data-show-root-shape-label="false"
           />
 
           <div v-else class="editor-shell">
             <Message severity="warn" :closable="false">
-              Aenderungen werden erst nach Speichern fuer Export und Tab-Wechsel uebernommen.
+              Changes are only applied to export and tab switches after saving.
             </Message>
             <shacl-form
               :key="editorFormKey"
@@ -239,7 +239,7 @@ useShaclFormViewer({
               class="metadata-form"
               data-collapse="open"
               data-ignore-owl-imports
-              data-language="de"
+              data-language="en"
               @change="onEditorChange"
             />
           </div>

@@ -61,7 +61,7 @@ describe('pipeline services', () => {
     const result = await generateRdfFromPipelineState(pipelineState)
 
     expect(result.subjectCount).toBe(2)
-    expect(result.tripleCount).toBe(8)
+    expect(result.tripleCount).toBe(10)
     expect(result.turtle).toContain('Building A')
     expect(result.turtle).toContain('building-b')
   })

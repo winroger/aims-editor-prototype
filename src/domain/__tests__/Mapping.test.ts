@@ -45,6 +45,19 @@ describe('MappingState', () => {
     expect(m.sourceForShape('http://x/A')).toBe('people-csv')
     expect(m.sourceForShape('http://x/Z')).toBeUndefined()
   })
+
+  it('keeps staging columns active by default and can disable them per source', () => {
+    const m = new MappingState()
+
+    expect(m.isStagingColumnActive('people', 'Email')).toBe(true)
+
+    m.setStagingColumnActive('people', 'Email', false)
+    expect(m.isStagingColumnActive('people', 'Email')).toBe(false)
+    expect(m.isStagingColumnActive('people', 'Name')).toBe(true)
+
+    m.setStagingColumnActive('people', 'Email', true)
+    expect(m.isStagingColumnActive('people', 'Email')).toBe(true)
+  })
 })
 
 

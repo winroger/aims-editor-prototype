@@ -79,7 +79,7 @@ export function useCanvasPreviews(options: UseCanvasPreviewsOptions) {
     isShapePreviewLoading.value = true
     try {
       const generated = generateRdf(options.shapesStore.ap, options.mappingStore.state, options.sources.value)
-      const model = buildBrowseModel(generated.store, options.nodeShapes.value)
+      const model = buildBrowseModel(generated.store, options.nodeShapes.value, options.sources.value)
       const matchingGroup = model.groups.find(group => group.classIri === shape.targetClass?.value)
 
       previewShapeSubjects.value = (matchingGroup?.subjects ?? []).map(subject => ({

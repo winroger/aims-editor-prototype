@@ -95,6 +95,7 @@ export const lobidModule = createMappingExtensionModule({
           lastError: node.stats.lastError,
           onOpenConfig: () => context.openSetupDialog('lobid-enrichment', { nodeId: node.id }),
           onPreview: () => context.openNodePreview(node.id),
+          onDelete: () => context.deleteNode(node.id),
           onRun: () => context.runNode(node.id),
         },
       })),
@@ -220,7 +221,7 @@ export const lobidModule = createMappingExtensionModule({
       deleteMappingEdge: (edge, shapeIri, propertyPath, context) => {
         const nodeId = mappingEnrichmentNodeId(edge, 'lobid')
         if (!nodeId) return false
-        const uiEdge = getCanvasLobidUiEdges(context).find(candidate =>
+        const uiEdge = getLobidUiEdges(context.mappingStore).find(candidate =>
           candidate.source === nodeId
           && candidate.sourceHandle === `h:${edge.sourceHeader}`
           && candidate.target === `shape:${shapeIri}`

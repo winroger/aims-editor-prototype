@@ -43,6 +43,12 @@ export const useDataStore = defineStore('data', () => {
     sources.value = sources.value.filter(s => s.id !== id)
   }
 
+  function removeNodeOutputSources(nodeId: string): void {
+    sources.value = sources.value.filter(source =>
+      !(source.origin.kind === 'node-output' && source.origin.nodeId === nodeId),
+    )
+  }
+
   function findById(id: string): DataSource | undefined {
     return sources.value.find(s => s.id === id)
   }
@@ -64,6 +70,7 @@ export const useDataStore = defineStore('data', () => {
     upsertSource,
     addNodeOutputSource,
     remove,
+    removeNodeOutputSources,
     findById,
     createSnapshot,
     restoreSnapshot,

@@ -15,7 +15,7 @@ import type { DataSource } from '@/domain/DataSource'
 const RECORD_ID_REGEX = /^rec[A-Za-z0-9]{14,}$/
 
 /** Splits a cell value into individual record-id candidates. */
-function splitCell(raw: unknown): string[] {
+export function splitLinkedRecordCell(raw: unknown): string[] {
   if (raw === null || raw === undefined) return []
   if (Array.isArray(raw)) return raw.map(String).map(s => s.trim()).filter(Boolean)
   const s = String(raw).trim()
@@ -25,7 +25,7 @@ function splitCell(raw: unknown): string[] {
 
 /** True if a cell value looks like one or more Airtable record IDs. */
 export function looksLikeRecordIds(raw: unknown): boolean {
-  const parts = splitCell(raw)
+  const parts = splitLinkedRecordCell(raw)
   if (parts.length === 0) return false
   return parts.every(p => RECORD_ID_REGEX.test(p))
 }
@@ -82,7 +82,7 @@ export function detectLinkedColumns(
     // Cross-check overlaps against other sources' record IDs
     const overlapByTarget = new Map<string, number>()
     for (const v of values) {
-      for (const id of splitCell(v)) {
+      for (const id of splitLinkedRecordCell(v)) {
         for (const [srcId, idSet] of recIdSets) {
           if (idSet.has(id)) {
             overlapByTarget.set(srcId, (overlapByTarget.get(srcId) ?? 0) + 1)

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDataStore } from '@/stores/dataStore'
+import { useExploreStore } from '@/stores/exploreStore'
 import { useMappingStore } from '@/stores/mappingStore'
 import { useMetadataStore } from '@/stores/metadataStore'
 import { useProjectStore } from '@/stores/projectStore'
@@ -49,6 +50,7 @@ describe('projectStore snapshot persistence', () => {
   it('creates and restores a full project snapshot across stores', async () => {
     const project = useProjectStore()
     const data = useDataStore()
+    const explore = useExploreStore()
     const shapes = useShapesStore()
     const metadata = useMetadataStore()
     const mapping = useMappingStore()
@@ -83,6 +85,25 @@ describe('projectStore snapshot persistence', () => {
       shapeIri: 'http://example.org/PersonShape',
       propertyPath: 'http://example.org/name',
     })
+    explore.addDataframe({
+      id: 'dataframe-1',
+      title: 'People dataframe',
+      rootClassIri: 'http://example.org/Person',
+      columns: [{
+        id: 'http://example.org/name',
+        label: 'Name',
+        path: [{ predicate: 'http://example.org/name', label: 'Name' }],
+      }],
+    })
+    explore.addChart({
+      id: 'chart-1',
+      title: 'People by name',
+      chartType: 'bar',
+      dataframeId: 'dataframe-1',
+      fieldMapping: {
+        category: 'http://example.org/name',
+      },
+    })
 
     const snapshot = project.createSnapshot()
 
@@ -92,6 +113,8 @@ describe('projectStore snapshot persistence', () => {
     expect(shapes.profiles).toHaveLength(0)
     expect(metadata.rootProfiles).toHaveLength(0)
     expect(mapping.state.edges).toHaveLength(0)
+    expect(explore.dataframes).toHaveLength(0)
+    expect(explore.charts).toHaveLength(0)
 
     project.restoreSnapshot(snapshot)
 
@@ -106,6 +129,10 @@ describe('projectStore snapshot persistence', () => {
     expect(geoNamesNodes(mapping)[0]?.id).toBe(geoNode.id)
     expect(geoNamesUiEdges(mapping)).toHaveLength(1)
     expect(mapping.state.edges).toHaveLength(1)
+    expect(explore.dataframes).toHaveLength(1)
+    expect(explore.dataframes[0]?.title).toBe('People dataframe')
+    expect(explore.charts).toHaveLength(1)
+    expect(explore.charts[0]?.title).toBe('People by name')
   })
 
   it('uses a configured snapshot repository port for save and load', async () => {
@@ -141,6 +168,7 @@ describe('projectStore snapshot persistence', () => {
   it('resets and restores the embedded showcase snapshot as one project boundary', () => {
     const project = useProjectStore()
     const data = useDataStore()
+    const explore = useExploreStore()
     const shapes = useShapesStore()
     const metadata = useMetadataStore()
     const mapping = useMappingStore()
@@ -153,6 +181,8 @@ describe('projectStore snapshot persistence', () => {
     expect(shapes.profiles).toHaveLength(snapshot.shapeProfiles.length)
     expect(metadata.rootIris).toHaveLength(snapshot.metadataRootIris.length)
     expect(mapping.state.edges).toHaveLength(snapshot.mapping.edges.length)
+    expect(explore.dataframes).toEqual([])
+    expect(explore.charts).toEqual([])
 
     project.reset()
 
@@ -170,6 +200,8 @@ describe('projectStore snapshot persistence', () => {
     expect(shapes.profiles).toHaveLength(snapshot.shapeProfiles.length)
     expect(metadata.rootIris).toHaveLength(snapshot.metadataRootIris.length)
     expect(mapping.state.edges).toHaveLength(snapshot.mapping.edges.length)
+    expect(explore.dataframes).toEqual([])
+    expect(explore.charts).toEqual([])
   })
 })
 

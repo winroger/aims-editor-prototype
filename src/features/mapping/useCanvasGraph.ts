@@ -20,6 +20,11 @@ import {
   type OpenSetupDialog,
 } from '@/features/mapping/mappingExtensionRegistry'
 import { useSourceGroupRefresh } from '@/features/mapping/useSourceGroupRefresh'
+import { getDependentTransformationNodeIds, syncTransformationNodeMappings } from '@/services/mapping/mappingEdgeSync'
+import { getGeoNamesNode, getGeoNamesUiEdges, GEONAMES_NODE_STATE_KEY, GEONAMES_UI_EDGE_STATE_KEY, syncGeoNamesShapeMappings } from '@/features/mapping/extensions/modules/nodes/geonames/workflow'
+import { getLobidNode, getLobidUiEdges, LOBID_NODE_STATE_KEY, LOBID_UI_EDGE_STATE_KEY, syncLobidShapeMappings } from '@/features/mapping/extensions/modules/nodes/lobid/workflow'
+import { TRANSFORMATION_NODE_STATE_KEY, TRANSFORMATION_UI_EDGE_STATE_KEY } from '@/features/mapping/extensions/modules/nodes/lat-lng-to-wkt/state'
+import type { TransformationUiEdge } from '@/features/mapping/extensions/modules/nodes/lat-lng-to-wkt/types'
 import type { useDataStore } from '@/stores/dataStore'
 import type { useMappingStore } from '@/stores/mappingStore'
 import { layoutMappingGraph } from '@/services/mapping/graphLayout'
@@ -36,12 +41,25 @@ interface ToastLike {
   }): void
 }
 
+interface ConfirmLike {
+  require(options: {
+    header: string
+    message: string
+    icon?: string
+    acceptLabel?: string
+    rejectLabel?: string
+    acceptClass?: string
+    accept: () => void
+  }): void
+}
+
 interface UseCanvasGraphOptions {
   dataStore: DataStore
   mappingStore: MappingStore
   sources: Ref<DataSource[]>
   canvasShapes: Ref<NodeShape[]>
   toast: ToastLike
+  confirm: ConfirmLike
   openSetupDialog: OpenSetupDialog
   openTablePreview: (source: DataSource) => void
   openNodePreview: (nodeId: string) => void
@@ -104,6 +122,108 @@ export function useCanvasGraph(options: UseCanvasGraphOptions) {
     }
   }
 
+  function deleteNode(nodeId: string): void {
+    const confirmation = deleteConfirmationForNode(nodeId)
+    if (!confirmation) return
+
+    options.confirm.require({
+      header: 'Delete node',
+      message: confirmation.message,
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Delete',
+      rejectLabel: 'Cancel',
+      acceptClass: 'p-button-danger',
+      accept: () => {
+        confirmation.accept()
+        options.toast.add({ severity: 'success', summary: 'Node deleted', detail: confirmation.successDetail, life: 2500 })
+      },
+    })
+  }
+
+  function deleteConfirmationForNode(nodeId: string): { message: string; successDetail: string; accept: () => void } | null {
+    if (nodeId.startsWith('geonames:')) {
+      return {
+        message: 'Delete this GeoNames node and all of its generated connections?',
+        successDetail: 'GeoNames node removed.',
+        accept: () => { deleteGeoNamesNode(nodeId) },
+      }
+    }
+
+    if (nodeId.startsWith('lobid:')) {
+      return {
+        message: 'Delete this Lobid node and all of its generated connections?',
+        successDetail: 'Lobid node removed.',
+        accept: () => { deleteLobidNode(nodeId) },
+      }
+    }
+
+    if (nodeId.startsWith('transform:')) {
+      return {
+        message: 'Delete this transformation node and its canvas connections?',
+        successDetail: 'Transformation node removed.',
+        accept: () => { deleteTransformationNode(nodeId) },
+      }
+    }
+
+    return null
+  }
+
+  function deleteGeoNamesNode(nodeId: string): void {
+    const transformationUiEdges = options.mappingStore.getExtensionState(TRANSFORMATION_UI_EDGE_STATE_KEY, [] as TransformationUiEdge[])
+    const dependentTransformIds = getDependentTransformationNodeIds(nodeId, transformationUiEdges)
+    const node = getGeoNamesNode(options.mappingStore, nodeId)
+
+    options.mappingStore.removeExtensionNode(GEONAMES_NODE_STATE_KEY, nodeId)
+    options.mappingStore.setExtensionState(
+      GEONAMES_UI_EDGE_STATE_KEY,
+      getGeoNamesUiEdges(options.mappingStore).filter(edge => edge.source !== nodeId && edge.target !== nodeId),
+    )
+    options.mappingStore.setExtensionState(
+      TRANSFORMATION_UI_EDGE_STATE_KEY,
+      transformationUiEdges.filter(edge => edge.source !== nodeId && edge.target !== nodeId),
+    )
+    options.dataStore.remove(node?.outputSourceId ?? `geonames-output:${nodeId}`)
+    options.dataStore.removeNodeOutputSources(nodeId)
+    options.mappingStore.state.edges = syncGeoNamesShapeMappingsRemoval(nodeId)
+
+    for (const transformId of dependentTransformIds) {
+      options.mappingStore.syncTransformationMappings(transformId, options.sources.value)
+    }
+  }
+
+  function deleteLobidNode(nodeId: string): void {
+    const node = getLobidNode(options.mappingStore, nodeId)
+
+    options.mappingStore.removeExtensionNode(LOBID_NODE_STATE_KEY, nodeId)
+    options.mappingStore.setExtensionState(
+      LOBID_UI_EDGE_STATE_KEY,
+      getLobidUiEdges(options.mappingStore).filter(edge => edge.source !== nodeId && edge.target !== nodeId),
+    )
+    options.dataStore.remove(node?.outputSourceId ?? `lobid-output:${nodeId}`)
+    options.dataStore.removeNodeOutputSources(nodeId)
+    options.mappingStore.state.edges = syncLobidShapeMappingsRemoval(nodeId)
+  }
+
+  function deleteTransformationNode(nodeId: string): void {
+    const transformationUiEdges = options.mappingStore.getExtensionState(TRANSFORMATION_UI_EDGE_STATE_KEY, [] as TransformationUiEdge[])
+    options.mappingStore.removeExtensionNode(TRANSFORMATION_NODE_STATE_KEY, nodeId)
+    options.mappingStore.setExtensionState(
+      TRANSFORMATION_UI_EDGE_STATE_KEY,
+      transformationUiEdges.filter(edge => edge.source !== nodeId && edge.target !== nodeId),
+    )
+    options.mappingStore.state.edges = syncTransformationNodeMappings(options.mappingStore.state.edges, nodeId, undefined, '')
+  }
+
+  function syncGeoNamesShapeMappingsRemoval(nodeId: string) {
+    syncGeoNamesShapeMappings(options.mappingStore, options.dataStore, nodeId, options.sources.value)
+    return options.mappingStore.state.edges
+  }
+
+  function syncLobidShapeMappingsRemoval(nodeId: string) {
+    syncLobidShapeMappings(options.mappingStore, options.dataStore, nodeId, options.sources.value)
+    return options.mappingStore.state.edges
+  }
+
   function rebuildGraph(): void {
     const extensionNodes: Node[] = buildExtensionCanvasNodes({
       dataStore: options.dataStore,
@@ -111,6 +231,7 @@ export function useCanvasGraph(options: UseCanvasGraphOptions) {
       visibleSources: visibleSources.value,
       openSetupDialog: options.openSetupDialog,
       openNodePreview: options.openNodePreview,
+      deleteNode,
       isRefreshingSourceGroup,
       refreshSourceGroup: refreshProviderSourceGroup,
       setSourceGroupEdgeVisibility,
@@ -122,6 +243,7 @@ export function useCanvasGraph(options: UseCanvasGraphOptions) {
       visibleSources: visibleSources.value,
       openSetupDialog: options.openSetupDialog,
       openNodePreview: options.openNodePreview,
+      deleteNode,
       isRefreshingSourceGroup,
       refreshSourceGroup: refreshProviderSourceGroup,
       setSourceGroupEdgeVisibility,

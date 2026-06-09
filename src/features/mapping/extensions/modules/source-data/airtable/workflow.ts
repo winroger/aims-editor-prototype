@@ -17,6 +17,7 @@ export function createAirtableDataSource(options: {
   headers: string[]
   rows: unknown[][]
   recordIds: string[]
+  primaryFieldName?: string
 }): DataSource {
   return createRemoteTabularSource({
     id: airtableSourceId(options.baseId, options.tableId),
@@ -25,6 +26,7 @@ export function createAirtableDataSource(options: {
     externalRef: {
       baseId: options.baseId,
       tableId: options.tableId,
+      ...(options.primaryFieldName ? { primaryFieldName: options.primaryFieldName } : {}),
     },
     headers: options.headers,
     rows: options.rows,
@@ -48,6 +50,12 @@ export function airtableTableId(source: DataSource): string | undefined {
     : undefined
 }
 
+export function airtablePrimaryFieldName(source: DataSource): string | undefined {
+  return isAirtableSource(source) && source.origin.kind === 'remote-table'
+    ? source.origin.externalRef.primaryFieldName
+    : undefined
+}
+
 export function listAirtableBases(sources: DataSource[]): string[] {
   return Array.from(new Set(
     sources
@@ -66,6 +74,7 @@ export async function refreshAirtableBase(dataStore: DataStore, pat: string, bas
 
   const svc = new AirtableService(pat, baseId)
   const metadataTables = await svc.listTables().catch(() => [])
+  const metadataTableById = new Map(metadataTables.map(table => [table.id, table] as const))
   const fieldOrderByTableId = new Map(
     metadataTables.map(table => [table.id, table.fields?.map(field => field.name) ?? []] as const),
   )
@@ -75,6 +84,8 @@ export async function refreshAirtableBase(dataStore: DataStore, pat: string, bas
     if (!tableId) continue
     const records = await svc.fetchTableRecords(tableId)
     const fieldOrder = fieldOrderByTableId.get(tableId) ?? table.headers
+    const metadataTable = metadataTableById.get(tableId)
+    const primaryFieldName = metadataTable?.fields?.find(field => field.id === metadataTable.primaryFieldId)?.name
     const { headers, rows, recordIds } = AirtableService.recordsToTable(records, fieldOrder)
     dataStore.upsertSource(createAirtableDataSource({
       baseId,
@@ -83,6 +94,7 @@ export async function refreshAirtableBase(dataStore: DataStore, pat: string, bas
       headers,
       rows,
       recordIds,
+      primaryFieldName,
     }))
   }
 

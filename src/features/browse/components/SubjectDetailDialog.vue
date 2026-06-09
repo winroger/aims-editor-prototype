@@ -104,11 +104,22 @@ const currentSubject = computed<BrowseSubject | null>(() => {
 const matchingShape = computed<NodeShape | null>(() => {
   const subj = currentSubject.value
   if (!subj) return null
-  for (const cls of subj.classes) {
-    const shape = props.shapes.find(s => s.targetClass?.value === cls)
-    if (shape) return shape
-  }
-  return null
+  const subjectPredicates = new Set(subj.properties.map(property => property.predicate))
+  const candidates = props.shapes.filter(shape =>
+    subj.classes.some(cls => shape.targetClass?.value === cls),
+  )
+  if (candidates.length === 0) return null
+
+  return candidates
+    .map(shape => ({
+      shape,
+      coveredPredicates: shape.properties.reduce((count, property) =>
+        count + (property.path && subjectPredicates.has(property.path.value) ? 1 : 0), 0),
+    }))
+    .sort((left, right) =>
+      right.coveredPredicates - left.coveredPredicates
+      || right.shape.properties.length - left.shape.properties.length,
+    )[0].shape
 })
 
 interface RelationshipEntry {

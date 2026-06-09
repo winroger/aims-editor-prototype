@@ -108,6 +108,7 @@ export const geoNamesModule = createMappingExtensionModule({
           lastError: node.stats.lastError,
           onOpenConfig: () => context.openSetupDialog('geonames-enrichment', { nodeId: node.id }),
           onPreview: () => context.openNodePreview(node.id),
+          onDelete: () => context.deleteNode(node.id),
           onRun: () => context.runNode(node.id),
         },
       })),
@@ -233,7 +234,7 @@ export const geoNamesModule = createMappingExtensionModule({
       deleteMappingEdge: (edge, shapeIri, propertyPath, context) => {
         const nodeId = mappingEnrichmentNodeId(edge, 'geonames')
         if (!nodeId) return false
-        const uiEdge = getCanvasGeoNamesUiEdges(context).find(candidate =>
+        const uiEdge = getGeoNamesUiEdges(context.mappingStore).find(candidate =>
           candidate.source === nodeId
           && candidate.sourceHandle === `h:${edge.sourceHeader}`
           && candidate.target === `shape:${shapeIri}`

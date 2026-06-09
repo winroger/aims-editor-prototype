@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, reactive, shallowRef } from 'vue'
 import { useDataStore } from './dataStore'
+import { useExploreStore } from './exploreStore'
 import { useMetadataStore } from './metadataStore'
 import { useShapesStore } from './shapesStore'
 import { useMappingStore } from './mappingStore'
@@ -9,6 +10,7 @@ import type { ProjectSnapshot } from '@/services/project/projectSnapshot'
 
 export const useProjectStore = defineStore('project', () => {
   const data = useDataStore()
+  const explore = useExploreStore()
   const metadata = useMetadataStore()
   const shapes = useShapesStore()
   const mapping = useMappingStore()
@@ -44,6 +46,7 @@ export const useProjectStore = defineStore('project', () => {
       metadataRootIris: metadataSnapshot.rootIris,
       metadataTurtle: metadataSnapshot.metadataTurtle,
       mapping: mapping.createSnapshot(),
+      explore: explore.createSnapshot(),
     }
   }
 
@@ -56,6 +59,7 @@ export const useProjectStore = defineStore('project', () => {
       metadataTurtle: snapshot.metadataTurtle,
     })
     mapping.restoreSnapshot(snapshot.mapping)
+    explore.restoreSnapshot(snapshot.explore)
     project.title = snapshot.project.title
     project.createdAt = snapshot.project.createdAt
   }
@@ -87,6 +91,7 @@ export const useProjectStore = defineStore('project', () => {
     metadata.reset()
     shapes.reset()
     mapping.reset()
+    explore.reset()
     project.title = 'Untitled dataset'
     project.createdAt = new Date().toISOString()
   }

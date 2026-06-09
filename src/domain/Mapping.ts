@@ -30,6 +30,13 @@ export interface MappingEdge {
   transformNodeId?: string
 }
 
+import {
+  createEmptyStagingColumnSelectionState,
+  isStagingColumnActive,
+  setStagingColumnActive,
+  type StagingColumnSelectionState,
+} from '@/services/mapping/stagingSemantics'
+
 export type MappingTransformId = string
 
 export type MappingEdgeSource =
@@ -124,6 +131,7 @@ export function mappingOwnedByNode(edge: MappingEdge, nodeId: string): boolean {
 
 export class MappingState {
   edges: MappingEdge[] = []
+  stagingColumns: StagingColumnSelectionState = createEmptyStagingColumnSelectionState()
 
   /** Adds or replaces the mapping for a given (shape, property) pair. */
   addOrReplace(edge: MappingEdge): void {
@@ -162,8 +170,21 @@ export class MappingState {
     return this.edges.length > 0
   }
 
+  hasStagingMappingsForSource(sourceId: string, headers: string[]): boolean {
+    return headers.some(header => this.isStagingColumnActive(sourceId, header))
+  }
+
+  isStagingColumnActive(sourceId: string, header: string): boolean {
+    return isStagingColumnActive(this.stagingColumns, sourceId, header)
+  }
+
+  setStagingColumnActive(sourceId: string, header: string, active: boolean): void {
+    this.stagingColumns = setStagingColumnActive(this.stagingColumns, sourceId, header, active)
+  }
+
   clear(): void {
     this.edges = []
+    this.stagingColumns = createEmptyStagingColumnSelectionState()
   }
 }
 

@@ -79,6 +79,7 @@ export interface ExtensionCanvasBuildContext {
   visibleSources: DataSource[]
   openSetupDialog: OpenSetupDialog
   openNodePreview: OpenNodePreview
+  deleteNode: (nodeId: string) => void
   isRefreshingSourceGroup: (provider: string, groupId: string) => boolean
   refreshSourceGroup: (provider: string, groupId: string) => Promise<void>
   setSourceGroupEdgeVisibility: (provider: string, groupId: string, isVisible: boolean) => void
@@ -224,6 +225,7 @@ export interface MappingExtensionStoreApi {
   createExtensionNode: <T extends { id: string }>(stateKey: string, idPrefix: string, buildNode: (id: string) => T) => T
   findExtensionNode: <T extends { id: string }>(stateKey: string, nodeId: string) => T | undefined
   updateExtensionNode: <T extends { id: string }>(stateKey: string, nodeId: string, updateNode: (node: T) => T) => void
+  removeExtensionNode: <T extends { id: string }>(stateKey: string, nodeId: string) => void
   upsertExtensionUiEdge: <T extends { id: string; source: string; sourceHandle: string; target: string; targetHandle: string }>(stateKey: string, edge: T) => void
   removeExtensionUiEdge: <T extends { id: string; source: string; sourceHandle: string; target: string; targetHandle: string }>(stateKey: string, edgeId: string) => { nextEdges: T[]; removed?: T }
   getExtensionState: <T>(key: string, fallback: T) => T

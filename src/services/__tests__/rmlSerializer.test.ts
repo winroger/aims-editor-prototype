@@ -4,6 +4,11 @@ import { airtableSource, csvSource, nodeOutputSource } from '@/test/dataSources'
 import { MappingState } from '@/domain/Mapping'
 import { serializeMappingAsRml } from '@/services/export/rmlSerializer'
 import {
+  ARDMP_STAGING_CLASS_BASE,
+  ARDMP_STAGING_INSTANCE_BASE,
+  ARDMP_STAGING_PROPERTY_BASE,
+} from '@/services/mapping/stagingSemantics'
+import {
   createMinimalExportMapping,
   createMinimalExportProfile,
   createMinimalExportSource,
@@ -54,6 +59,18 @@ ex:PlaceShape a sh:NodeShape ;
   sh:property [ sh:name "Geometry" ; sh:path geo:asWKT ; sh:datatype geo:wktLiteral ] ;
   sh:property [ sh:name "GeoNames ID" ; sh:path ex:geonamesId ; sh:datatype xsd:string ] ;
   sh:property [ sh:name "Place label" ; sh:path rdfs:label ; sh:datatype xsd:string ] .
+`
+
+const HYBRID_LOCATION_SHAPE = `
+@prefix sh:  <http://www.w3.org/ns/shacl#> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix geo: <http://www.opengis.net/ont/geosparql#> .
+@prefix ex:  <http://example.org/> .
+
+ex:LocationShape a sh:NodeShape ;
+  dct:title "Location" ;
+  sh:targetClass dct:Location ;
+  sh:property [ sh:name "Geometry" ; sh:path geo:asWKT ; sh:datatype geo:wktLiteral ] .
 `
 
 describe('rmlSerializer', () => {
@@ -111,7 +128,7 @@ describe('rmlSerializer', () => {
 
     const ttl = await serializeMappingAsRml(ap, mapping, [table, geonames])
 
-    expect((ttl.match(/rr:TriplesMap/g) ?? []).length).toBe(2)
+    expect((ttl.match(/rr:TriplesMap/g) ?? []).length).toBe(3)
     expect(ttl).toContain('rml:source "sources/locations_csv.csv"')
     expect(ttl).toContain('rml:source "sources/GeoNames_node-1.csv"')
     expect(ttl).toContain('rr:template "http://example.org/Place/{id}"')
@@ -160,6 +177,79 @@ describe('rmlSerializer', () => {
     expect(ttl).toMatch(/rr:predicate\s+\w*:year/)
     expect(ttl).toContain('rr:predicate schema:url')
     expect(ttl).toMatch(/rr:class\s+\w*:Building/)
+  })
+
+  it('creates a generic staging TriplesMap for unmapped tabular sources by default', async () => {
+    const ap = new ApplicationProfile()
+    const source = airtableSource('people', 'People', ['Name', 'Email'], [['Alice', 'alice@example.org']], ['recAAA'])
+
+    const ttl = await serializeMappingAsRml(ap, new MappingState(), [source])
+
+    expect(ttl).toContain('rr:TriplesMap')
+    expect(ttl).toContain('rml:source "sources/People.csv"')
+    expect(ttl).toContain(`${ARDMP_STAGING_INSTANCE_BASE}{_recordId}`)
+    expect(ttl).toContain(`@prefix ardmp_class: <${ARDMP_STAGING_CLASS_BASE}>.`)
+    expect(ttl).toContain(`@prefix ardmp_prop: <${ARDMP_STAGING_PROPERTY_BASE}>.`)
+    expect(ttl).toContain('rr:class ardmp_class:people')
+    expect(ttl).toContain('rr:predicate ardmp_prop:people__name')
+    expect(ttl).toContain('rr:predicate ardmp_prop:people__email')
+  })
+
+  it('omits disabled columns from generic staging RML but keeps explicit mappings', async () => {
+    const ap = new ApplicationProfile()
+    ap.upsert(parseShaclProfile(FK_SHAPES, 'fk.ttl', 'uploaded'))
+
+    const source = airtableSource('people', 'People', ['Name', 'Email'], [['Alice', 'alice@example.org']], ['recAAA'])
+    const mapping = new MappingState()
+    mapping.setStagingColumnActive(source.id, 'Email', false)
+    mapping.addOrReplace({
+      sourceId: source.id,
+      sourceHeader: 'Name',
+      shapeIri: 'http://example.org/PersonShape',
+      propertyPath: 'http://example.org/name',
+    })
+
+    const ttl = await serializeMappingAsRml(ap, mapping, [source])
+
+    expect(ttl).toContain('rr:predicate exa:name')
+    expect(ttl).toContain('rml:reference "Name"')
+    expect(ttl).not.toContain('rr:predicate ardmp_prop:people__name')
+    expect(ttl).not.toContain('rr:predicate ardmp_prop:people__email')
+  })
+
+  it('falls back to the first source header when no recordIds exist', async () => {
+    const ap = new ApplicationProfile()
+    const source = csvSource('people', 'People', ['id', 'Name'], [['p1', 'Alice']])
+
+    const ttl = await serializeMappingAsRml(ap, new MappingState(), [source])
+
+    expect(ttl).toContain(`rr:template "${ARDMP_STAGING_INSTANCE_BASE}{id}"`)
+  })
+
+  it('reuses the explicit subject template for remaining staging columns when a source has one explicit target owner', async () => {
+    const ap = new ApplicationProfile()
+    ap.upsert(parseShaclProfile(HYBRID_LOCATION_SHAPE, 'hybrid-location.ttl', 'uploaded'))
+
+    const source = airtableSource(
+      'locations',
+      'locations.csv',
+      ['Label', 'WKT'],
+      [['Vancouver', 'POINT(-123.1207 49.2827)']],
+      ['recLOCATION000001'],
+    )
+    const mapping = new MappingState()
+    mapping.addOrReplace({
+      sourceId: source.id,
+      sourceHeader: 'WKT',
+      shapeIri: 'http://example.org/LocationShape',
+      propertyPath: 'http://www.opengis.net/ont/geosparql#asWKT',
+    })
+
+    const ttl = await serializeMappingAsRml(ap, mapping, [source])
+
+    expect(ttl).toContain('rr:template "http://example.org/Location/{_recordId}"')
+    expect(ttl).toContain('rr:predicate ardmp_prop:locations-csv__label')
+    expect(ttl).not.toContain('rr:class ardmp_class:locations-csv')
   })
 })
 

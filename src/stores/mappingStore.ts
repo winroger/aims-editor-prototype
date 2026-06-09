@@ -17,7 +17,12 @@ import {
   syncTransformationNodeMappings,
   upsertUiEdge,
 } from '@/services/mapping/mappingEdgeSync'
-import { cloneMappingEdges, type MappingStoreSnapshot } from '@/services/project/projectSnapshot'
+import {
+  cloneMappingEdges,
+  cloneStagingColumns,
+  normalizeStagingColumns,
+  type MappingStoreSnapshot,
+} from '@/services/project/projectSnapshot'
 import { useDataStore } from '@/stores/dataStore'
 
 export const useMappingStore = defineStore('mapping', () => {
@@ -63,6 +68,11 @@ export const useMappingStore = defineStore('mapping', () => {
     setExtensionState(stateKey, nodes.map(node => (node.id === nodeId ? updateNode(node) : node)))
   }
 
+  function removeExtensionNode<T extends { id: string }>(stateKey: string, nodeId: string): void {
+    const nodes = getExtensionState(stateKey, [] as T[])
+    setExtensionState(stateKey, nodes.filter(node => node.id !== nodeId))
+  }
+
   function upsertExtensionUiEdge<T extends { id: string; source: string; sourceHandle: string; target: string; targetHandle: string }>(
     stateKey: string,
     edge: T,
@@ -99,6 +109,14 @@ export const useMappingStore = defineStore('mapping', () => {
 
   function unset(shapeIri: string, propertyPath: string): void {
     state.remove(shapeIri, propertyPath)
+  }
+
+  function setStagingColumnActive(sourceId: string, header: string, active: boolean): void {
+    state.setStagingColumnActive(sourceId, header, active)
+  }
+
+  function isStagingColumnActive(sourceId: string, header: string): boolean {
+    return state.isStagingColumnActive(sourceId, header)
   }
 
   function addTransformationNode(kind: MappingTransformId = 'lat-lng-to-wkt'): TransformationNodeConfig {
@@ -144,12 +162,14 @@ export const useMappingStore = defineStore('mapping', () => {
   function createSnapshot(): MappingStoreSnapshot {
     return {
       edges: cloneMappingEdges(state.edges),
+      stagingColumns: cloneStagingColumns(state.stagingColumns),
       extensionState: createExtensionSnapshotState({ mappingStore: extensionStoreApi }),
     }
   }
 
   function restoreSnapshot(snapshot: MappingStoreSnapshot): void {
     state.edges = cloneMappingEdges(snapshot.edges)
+    state.stagingColumns = normalizeStagingColumns(snapshot.stagingColumns)
     restoreExtensionSnapshotState(snapshot.extensionState, { mappingStore: extensionStoreApi })
   }
 
@@ -163,6 +183,7 @@ export const useMappingStore = defineStore('mapping', () => {
     createExtensionNode,
     findExtensionNode,
     updateExtensionNode,
+    removeExtensionNode,
     upsertExtensionUiEdge,
     removeExtensionUiEdge,
     getExtensionState,
@@ -178,6 +199,7 @@ export const useMappingStore = defineStore('mapping', () => {
     createExtensionNode,
     findExtensionNode,
     updateExtensionNode,
+    removeExtensionNode,
     upsertExtensionUiEdge,
     removeExtensionUiEdge,
     getExtensionState,
@@ -185,6 +207,8 @@ export const useMappingStore = defineStore('mapping', () => {
     resetExtensionState,
     set,
     unset,
+    setStagingColumnActive,
+    isStagingColumnActive,
     addTransformationNode,
     transformationInputsForNode,
     syncTransformationMappings,

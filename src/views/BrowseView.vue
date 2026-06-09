@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * BrowseView — card, list, and Turtle view over generated RDF subjects.
+ * BrowseView — list and Turtle view over generated RDF subjects.
  *
  * On mount: regenerates RDF automatically from the current mapping.
  *
@@ -15,11 +15,13 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import { isCanvasVisibleDataSource } from '@/domain/DataSource'
 import { useShapesStore } from '@/stores/shapesStore'
 import { useDataStore } from '@/stores/dataStore'
 import { useMappingStore } from '@/stores/mappingStore'
 import { generateRdf, serializeGraph } from '@/services/rdf/rdfGenerator'
 import { buildBrowseModel, type BrowseModel, type BrowseSubject } from '@/services/browse/browseService'
+import { buildRuntimeStagingShapes } from '@/services/mapping/stagingShapes'
 import {
   classLabelsForSubject,
   columnsForSubjects,
@@ -50,8 +52,22 @@ const combinedShapesTurtle = computed(() =>
   profiles.value.map(p => p.rawTurtle).join('\n\n'),
 )
 
+const runtimeStagingShapes = computed(() =>
+  buildRuntimeStagingShapes(sources.value, mappingStore.state, nodeShapes.value),
+)
+
+const browseNodeShapes = computed(() => [
+  ...nodeShapes.value,
+  ...runtimeStagingShapes.value.nodeShapes,
+])
+
+const browseShapesTurtle = computed(() =>
+  [combinedShapesTurtle.value, runtimeStagingShapes.value.turtle].filter(Boolean).join('\n\n'),
+)
+
 const canBrowse = computed(() =>
-  hasShapes.value && sources.value.length > 0 && mappingStore.state.hasMappings,
+  sources.value.some(source => isCanvasVisibleDataSource(source))
+  || (hasShapes.value && sources.value.length > 0 && mappingStore.state.hasMappings),
 )
 
 // ---------- RDF + validation, auto-built from current state ----------
@@ -70,7 +86,7 @@ async function regenerate(): Promise<void> {
   generationError.value = null
   try {
     const result = generateRdf(ap.value, mappingStore.state, sources.value)
-    model.value = buildBrowseModel(result.store, nodeShapes.value)
+    model.value = buildBrowseModel(result.store, browseNodeShapes.value, sources.value)
     ttlOutput.value = await serializeGraph(result.store, 'text/turtle')
   } catch (err) {
     generationError.value = err instanceof Error ? err.message : String(err)
@@ -89,14 +105,14 @@ watch(
     () => sources.value.map(s => s.id).join('|'),
     () => nodeShapes.value.length,
     () => mappingStore.state.edges.length,
+    () => JSON.stringify(mappingStore.state.stagingColumns.inactiveColumnsBySource),
   ],
   regenerate,
 )
 
 // ---------- View state ----------
-const layout = ref<'cards' | 'list' | 'ttl'>('cards')
+const layout = ref<'list' | 'ttl'>('list')
 const layoutOptions = [
-  { value: 'cards', icon: 'pi pi-th-large', label: 'Cards' },
   { value: 'list',  icon: 'pi pi-list',     label: 'List' },
   { value: 'ttl',   icon: 'pi pi-code',     label: 'TTL' },
 ]
@@ -193,12 +209,12 @@ async function copyTurtle(): Promise<void> {
     <header class="view-header">
       <div>
         <h1>Browse</h1>
-        <p class="subtitle">Inspect the generated RDF subjects as cards, a flat list, or raw Turtle.</p>
+        <p class="subtitle">Inspect the generated RDF subjects as a flat list or raw Turtle.</p>
       </div>
     </header>
 
     <Message v-if="!canBrowse" severity="warn" :closable="false">
-      Load profiles, data, and at least one mapping to browse generated data.
+      Load source data to browse generated RDF. Profiles and explicit mappings remain optional while staging mappings are active.
     </Message>
 
     <Message v-if="generationError" severity="error" :closable="false">
@@ -256,17 +272,6 @@ async function copyTurtle(): Promise<void> {
           @click="clearFilters"
         />
 
-        <Button
-          v-if="layout === 'ttl'"
-          icon="pi pi-copy"
-          label="Copy Turtle"
-          size="small"
-          severity="secondary"
-          outlined
-          :loading="isCopying"
-          @click="copyTurtle"
-        />
-
       </div>
 
       <!-- Empty state -->
@@ -275,53 +280,19 @@ async function copyTurtle(): Promise<void> {
       </Message>
 
       <section v-if="layout === 'ttl'" class="ttl-view">
-        <header class="group-header ttl-header">
-          <h2>Turtle Graph</h2>
-        </header>
+        <div class="ttl-actions">
+          <Button
+            icon="pi pi-copy"
+            label="Copy"
+            size="small"
+            severity="secondary"
+            outlined
+            :loading="isCopying"
+            @click="copyTurtle"
+          />
+        </div>
         <pre class="ttl-output">{{ ttlOutput }}</pre>
       </section>
-
-      <!-- Card layout -->
-      <div v-else-if="layout === 'cards'" class="cards">
-        <article
-          v-for="subject in visibleSubjects"
-          :key="subject.iri"
-          class="card clickable"
-          tabindex="0"
-          role="button"
-          @click="openDetail(subject)"
-          @keydown.enter="openDetail(subject)"
-          @keydown.space.prevent="openDetail(subject)"
-        >
-          <header class="card-header">
-            <h3 :title="subject.iri">{{ subject.label }}</h3>
-            <span class="card-iri" :title="subject.iri">{{ localName(subject.iri) }}</span>
-          </header>
-          <div class="subject-classes">
-            <Tag v-for="classLabel in classLabelsFor(subject)" :key="`${subject.iri}-${classLabel}`" :value="classLabel" severity="info" />
-          </div>
-          <dl v-if="subject.properties.length > 0" class="props">
-            <template v-for="(property, idx) in subject.properties" :key="`${subject.iri}-${idx}`">
-              <dt :title="property.predicate">{{ property.label }}</dt>
-              <dd>
-                <button
-                  v-if="property.isResource && property.resolvedLabel"
-                  class="ref-btn"
-                  :title="property.value"
-                  @click.stop="openDetail({ iri: property.value, label: property.resolvedLabel, classes: [], properties: [] })"
-                >
-                  {{ property.resolvedLabel }}
-                </button>
-                <a v-else-if="property.isResource" :href="property.value" target="_blank" rel="noopener" :title="property.value" @click.stop>
-                  {{ localName(property.value) }}
-                </a>
-                <span v-else>{{ property.value }}</span>
-              </dd>
-            </template>
-          </dl>
-          <p v-else class="empty">No properties available.</p>
-        </article>
-      </div>
 
       <!-- List layout (pivot) -->
       <div v-else class="list-table-wrapper">
@@ -401,8 +372,8 @@ async function copyTurtle(): Promise<void> {
       v-model="detailOpen"
       :subject-iri="detailSubjectIri"
       :model="model"
-      :shapes="nodeShapes"
-      :shapes-turtle="combinedShapesTurtle"
+      :shapes="browseNodeShapes"
+      :shapes-turtle="browseShapesTurtle"
       :values-turtle="ttlOutput"
     />
   </div>
@@ -412,16 +383,17 @@ async function copyTurtle(): Promise<void> {
 .browse-view {
   max-width: 1400px;
   width: 100%;
+  height: 100%;
+  min-height: 0;
   margin: 0 auto;
   padding: var(--space-6) var(--space-5);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  overflow: auto;
 }
 
 .browse-view.is-ttl-layout {
-  height: calc(100vh - 2rem);
-  min-height: calc(100vh - 2rem);
   box-sizing: border-box;
   overflow: hidden;
 }
@@ -486,12 +458,18 @@ async function copyTurtle(): Promise<void> {
 .layout-label { margin-left: var(--space-1); }
 
 .ttl-view {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+.ttl-actions {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 1;
 }
 .group-header {
   display: flex;
@@ -504,73 +482,11 @@ async function copyTurtle(): Promise<void> {
 }
 .ttl-header { border-bottom: 1px solid var(--color-border); }
 
-.subject-classes,
 .class-chip-row {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
-
-.cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: var(--space-3);
-}
-.card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-3);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  transition: border-color 0.15s, box-shadow 0.15s;
-  &:hover { border-color: var(--color-primary); box-shadow: var(--shadow-sm); }
-  &.clickable { cursor: pointer; }
-  &.clickable:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
-}
-.card-header {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  h3 {
-    margin: 0;
-    font-size: 1rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .card-iri {
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    color: var(--color-text-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-}
-.props {
-  display: grid;
-  grid-template-columns: minmax(80px, max-content) 1fr;
-  gap: var(--space-1) var(--space-2);
-  margin: 0;
-  font-size: 0.85rem;
-  dt {
-    color: var(--color-text-muted);
-    font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  dd {
-    margin: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    word-break: break-word;
-    a { color: var(--color-primary); text-decoration: none; &:hover { text-decoration: underline; } }
-  }
-}
-.empty { color: var(--color-text-muted); font-style: italic; margin: 0; font-size: 0.85rem; }
 
 .list-table-wrapper {
   overflow-x: auto;
@@ -643,7 +559,7 @@ async function copyTurtle(): Promise<void> {
   background: var(--color-surface-2);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  padding: var(--space-3);
+  padding: calc(var(--space-3) + 2.75rem) var(--space-3) var(--space-3);
   font-family: var(--font-mono);
   font-size: 0.8rem;
   flex: 1;

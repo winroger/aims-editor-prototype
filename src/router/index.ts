@@ -1,14 +1,16 @@
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router'
 
 /**
- * Application has two main views:
- *   - /app:    unified mapping canvas (setup + mapping)
+ * Application has main views for import, browse, explore, and export:
+ *   - /app:    unified import canvas (setup + mapping)
  *   - /browse: list/card browser over generated RDF subjects
+ *   - /explore: SHACL-guided chart builder over generated RDF subjects
  *   - /export: RO-Crate metadata + export workflow
  */
 export const APP_MODES = [
-  { key: 'app',    label: 'Mapping', icon: 'pi pi-share-alt', path: '/app' },
+  { key: 'app',    label: 'Import', icon: 'pi pi-share-alt', path: '/app' },
   { key: 'browse', label: 'Browse',  icon: 'pi pi-th-large',  path: '/browse' },
+  { key: 'explore', label: 'Explore', icon: 'pi pi-chart-bar', path: '/explore' },
   { key: 'export', label: 'Export',  icon: 'pi pi-download',  path: '/export' },
 ] as const
 
@@ -19,7 +21,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/app',
     name: 'app',
-    component: () => import('@/views/AppView.vue'),
+    component: () => import('@/views/ImportView.vue'),
   },
   {
     path: '/browse',
@@ -30,6 +32,11 @@ const routes: RouteRecordRaw[] = [
     path: '/export',
     name: 'export',
     component: () => import('@/views/ExportView.vue'),
+  },
+  {
+    path: '/explore',
+    name: 'explore',
+    component: () => import('@/views/ExploreView.vue'),
   },
   // Backwards-compat redirects
   { path: '/setup', redirect: '/app' },

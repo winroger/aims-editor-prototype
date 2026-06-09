@@ -27,11 +27,16 @@ const props = defineProps<{
       outputHandleColor?: string
     }
     onPreview?: () => void
+    onDelete?: () => void
   }
 }>()
 
 function previewNode(): void {
   props.data.onPreview?.()
+}
+
+function deleteNode(): void {
+  props.data.onDelete?.()
 }
 </script>
 
@@ -53,9 +58,14 @@ function previewNode(): void {
         <strong>{{ data.title }}</strong>
         <span>{{ data.subtitle }}</span>
       </div>
-      <button class="preview-btn" type="button" title="Preview transform" aria-label="Preview transform" @click.stop="previewNode">
-        <i class="pi pi-eye" />
-      </button>
+      <div class="header-actions">
+        <button class="preview-btn delete-btn" type="button" title="Delete node" aria-label="Delete node" @click.stop="deleteNode">
+          <i class="pi pi-trash" />
+        </button>
+        <button class="preview-btn" type="button" title="Preview transform" aria-label="Preview transform" @click.stop="previewNode">
+          <i class="pi pi-eye" />
+        </button>
+      </div>
     </header>
 
     <ul class="inputs">
@@ -108,7 +118,6 @@ header {
 }
 
 .preview-btn {
-  margin-left: auto;
   width: 28px;
   height: 28px;
   display: inline-flex;
@@ -123,6 +132,21 @@ header {
   &:hover {
     background: white;
     border-color: color-mix(in srgb, var(--transform-header-color) 35%, white);
+  }
+}
+
+.header-actions {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.delete-btn {
+  border-color: rgba(185, 28, 28, 0.18);
+
+  &:hover {
+    border-color: rgba(185, 28, 28, 0.4);
+    color: #b91c1c;
   }
 }
 

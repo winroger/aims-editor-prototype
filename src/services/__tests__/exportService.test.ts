@@ -5,6 +5,11 @@ import { airtableSource, csvSource } from '@/test/dataSources'
 import { MappingState } from '@/domain/Mapping'
 import { buildRoCratePackage } from '@/services/export/exportService'
 import {
+  ARDMP_STAGING_CLASS_BASE,
+  ARDMP_STAGING_INSTANCE_BASE,
+  ARDMP_STAGING_PROPERTY_BASE,
+} from '@/services/mapping/stagingSemantics'
+import {
   createMinimalExportMapping,
   createMinimalExportProfile,
   createMinimalExportSource,
@@ -272,6 +277,36 @@ _:alice a foaf:Person ;
     expect(transformCsv).toContain('wkt')
     expect(transformCsv).toContain('POINT(8.6512 49.8728)')
     expect(ids).toContain('sources/lat-lng-to-wkt_transform_test.csv')
+  })
+
+  it('keeps dataset.ttl and mapping.rml.ttl aligned for staging-only tabular exports', async () => {
+    const source = airtableSource('people', 'People', ['Name', 'Email'], [['Alice', 'alice@example.org']], ['recAAA'])
+
+    const result = await buildRoCratePackage({
+      projectTitle: 'Staging export',
+      ap: new ApplicationProfile(),
+      profiles: [],
+      sources: [source],
+      mapping: new MappingState(),
+    })
+
+    const zip = await JSZip.loadAsync(await result.blob.arrayBuffer())
+    const datasetTtl = await zip.file('data/dataset.ttl')?.async('string')
+    const rml = await zip.file('mapping/mapping.rml.ttl')?.async('string')
+
+    expect(datasetTtl).toContain(`@prefix ardmp_class: <${ARDMP_STAGING_CLASS_BASE}>.`)
+    expect(datasetTtl).toContain(`@prefix ardmp_inst: <${ARDMP_STAGING_INSTANCE_BASE}>.`)
+    expect(datasetTtl).toContain(`@prefix ardmp_prop: <${ARDMP_STAGING_PROPERTY_BASE}>.`)
+    expect(datasetTtl).toContain('ardmp_inst:recAAA')
+    expect(datasetTtl).toContain('a ardmp_class:people;')
+    expect(datasetTtl).toContain('ardmp_prop:people__name "Alice"')
+
+    expect(rml).toContain(`${ARDMP_STAGING_INSTANCE_BASE}{_recordId}`)
+    expect(rml).toContain(`@prefix ardmp_class: <${ARDMP_STAGING_CLASS_BASE}>.`)
+    expect(rml).toContain(`@prefix ardmp_prop: <${ARDMP_STAGING_PROPERTY_BASE}>.`)
+    expect(rml).toContain('rr:class ardmp_class:people')
+    expect(rml).toContain('rr:predicate ardmp_prop:people__name')
+    expect(rml).toContain('rml:source "sources/People.csv"')
   })
 })
 

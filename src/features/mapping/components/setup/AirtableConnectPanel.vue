@@ -6,7 +6,11 @@ import Button from 'primevue/button'
 import Listbox from 'primevue/listbox'
 import Message from 'primevue/message'
 import { useToast } from 'primevue/usetoast'
-import { AirtableService, type AirtableTable } from '@/features/mapping/extensions/modules/source-data/airtable/client'
+import {
+  AirtableService,
+  type AirtableBase,
+  type AirtableTable,
+} from '@/features/mapping/extensions/modules/source-data/airtable/client'
 import { createAirtableDataSource } from '@/features/mapping/extensions/modules/source-data/airtable/workflow'
 import { loadAirtableCredentials, saveAirtableCredentials, clearAirtableCredentials } from '@/services/infrastructure/storage/credentialStore'
 import { useDataStore } from '@/stores/dataStore'
@@ -26,9 +30,11 @@ const emit = defineEmits<{ added: [] }>()
 
 const pat = ref('')
 const baseId = ref('')
+const bases = ref<AirtableBase[]>([])
 const tables = ref<AirtableTable[]>([])
 const selectedTables = ref<AirtableTable[]>([])
-const isConnecting = ref(false)
+const isLoadingBases = ref(false)
+const isLoadingTables = ref(false)
 const isImporting = ref(false)
 const error = ref<string | null>(null)
 
@@ -41,34 +47,86 @@ onMounted(async () => {
     baseId.value = props.initialBaseId
   }
 
-  if (props.autoConnectOnMount && pat.value && baseId.value) {
-    await connect(false)
+  if (props.autoConnectOnMount && pat.value) {
+    await loadBases(false)
   }
 })
 
-async function connect(showToast = true): Promise<void> {
+async function loadBases(showToast = true): Promise<void> {
   error.value = null
-  if (!pat.value || !baseId.value) {
-    error.value = 'Enter both a PAT and a base ID.'
+  if (!pat.value) {
+    error.value = 'Enter a Personal Access Token.'
     return
   }
-  isConnecting.value = true
+  isLoadingBases.value = true
   try {
-    const svc = new AirtableService(pat.value, baseId.value)
-    tables.value = await svc.listTables()
-    await saveAirtableCredentials({ pat: pat.value, baseId: baseId.value })
+    const svc = new AirtableService(pat.value)
+    bases.value = await svc.listBases()
+
+    if (!bases.value.some(base => base.id === baseId.value)) {
+      baseId.value = props.initialBaseId && bases.value.some(base => base.id === props.initialBaseId)
+        ? props.initialBaseId
+        : ''
+    }
+    if (!baseId.value && bases.value.length === 1) {
+      baseId.value = bases.value[0].id
+    }
+
+    if (baseId.value) {
+      await loadTables(false)
+    } else {
+      tables.value = []
+      selectedTables.value = []
+    }
+
     if (showToast) {
-      toast.add({ severity: 'success', summary: 'Connected', detail: `${tables.value.length} table(s) found.`, life: 3000 })
+      toast.add({ severity: 'success', summary: 'Bases loaded', detail: `${bases.value.length} base(s) available.`, life: 3000 })
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
-    isConnecting.value = false
+    isLoadingBases.value = false
   }
 }
 
-function connectFromButton(): void {
-  void connect()
+async function loadTables(showToast = true): Promise<void> {
+  error.value = null
+  if (!pat.value || !baseId.value) {
+    tables.value = []
+    selectedTables.value = []
+    return
+  }
+
+  isLoadingTables.value = true
+  try {
+    const svc = new AirtableService(pat.value, baseId.value)
+    tables.value = await svc.listTables()
+    selectedTables.value = []
+    await saveAirtableCredentials({ pat: pat.value, baseId: baseId.value })
+    if (showToast) {
+      toast.add({ severity: 'success', summary: 'Tables loaded', detail: `${tables.value.length} table(s) found.`, life: 3000 })
+    }
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    isLoadingTables.value = false
+  }
+}
+
+function loadBasesFromButton(): void {
+  void loadBases()
+}
+
+function handleBaseSelection(): void {
+  void loadTables(false)
+}
+
+function selectAllTables(): void {
+  selectedTables.value = [...tables.value]
+}
+
+function clearTableSelection(): void {
+  selectedTables.value = []
 }
 
 async function importSelected(): Promise<void> {
@@ -79,6 +137,7 @@ async function importSelected(): Promise<void> {
     for (const table of selectedTables.value) {
       const records = await svc.fetchTableRecords(table.id)
       const fieldOrder = table.fields?.map(field => field.name) ?? []
+      const primaryFieldName = table.fields?.find(field => field.id === table.primaryFieldId)?.name
       const { headers, rows, recordIds } = AirtableService.recordsToTable(records, fieldOrder)
       data.upsertSource(createAirtableDataSource({
         baseId: baseId.value,
@@ -87,6 +146,7 @@ async function importSelected(): Promise<void> {
         headers,
         rows,
         recordIds,
+        primaryFieldName,
       }))
     }
     toast.add({
@@ -113,7 +173,9 @@ async function forgetCredentials(): Promise<void> {
   await clearAirtableCredentials()
   pat.value = ''
   baseId.value = ''
+  bases.value = []
   tables.value = []
+  selectedTables.value = []
   toast.add({ severity: 'info', summary: 'Credentials cleared', life: 2000 })
 }
 </script>
@@ -126,11 +188,16 @@ async function forgetCredentials(): Promise<void> {
         <Password v-model="pat" :feedback="false" toggle-mask placeholder="patXXXXXXXXX" fluid />
       </label>
       <label>
-        <span>Base ID</span>
-        <InputText v-model="baseId" placeholder="appXXXXXXXXXXXXXX" fluid />
+        <span>Base</span>
+        <select v-model="baseId" :disabled="bases.length === 0 || isLoadingTables" @change="handleBaseSelection">
+          <option value="">Select a base</option>
+          <option v-for="base in bases" :key="base.id" :value="base.id">
+            {{ base.name }}
+          </option>
+        </select>
       </label>
       <div class="form-actions">
-        <Button label="Connect" icon="pi pi-link" :loading="isConnecting" @click="connectFromButton" />
+        <Button label="Load bases" icon="pi pi-link" :loading="isLoadingBases" @click="loadBasesFromButton" />
         <Button label="Forget credentials" icon="pi pi-trash" severity="secondary" text @click="forgetCredentials" />
       </div>
     </div>
@@ -138,7 +205,13 @@ async function forgetCredentials(): Promise<void> {
     <Message v-if="error" severity="error" :closable="false">{{ error }}</Message>
 
     <div v-if="tables.length > 0" class="tables">
-      <h4>Select tables</h4>
+      <div class="tables-header">
+        <h4>Select tables</h4>
+        <div class="table-actions">
+          <Button label="Select all" size="small" severity="secondary" outlined @click="selectAllTables" />
+          <Button label="Clear" size="small" severity="secondary" text @click="clearTableSelection" />
+        </div>
+      </div>
       <Listbox
         v-model="selectedTables"
         :options="tables"
@@ -180,11 +253,36 @@ label {
   gap: var(--space-2);
   flex-wrap: wrap;
 }
+
+select {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 0.7rem 0.8rem;
+  font: inherit;
+}
+
 .tables {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
 }
+
+.tables-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.table-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
 h4 { margin: 0; font-size: 0.95rem; }
 </style>
 

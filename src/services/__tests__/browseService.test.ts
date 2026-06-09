@@ -5,6 +5,7 @@ import { restoreDataSourcesFromSnapshot } from '@/services/project/projectSnapsh
 import { getEmbeddedExampleProjectSnapshot } from '@/services/project/loadEmbeddedExampleProject'
 import { generateRdf } from '@/services/rdf/rdfGenerator'
 import { buildBrowseModel } from '@/services/browse/browseService'
+import { createAirtableDataSource } from '@/features/mapping/extensions/modules/source-data/airtable/workflow'
 
 describe('browseService', () => {
   it('uses gnd:preferredName as the building label in the minimal showcase example', () => {
@@ -26,5 +27,24 @@ describe('browseService', () => {
     expect(buildingGroup?.subjects.map(subject => subject.label)).toEqual(
       expect.arrayContaining(['Harbor House', 'Timber Hall']),
     )
+  })
+
+  it('uses the Airtable primary field as the browse label fallback for staging subjects', () => {
+    const source = createAirtableDataSource({
+      baseId: 'app123',
+      tableId: 'tbl123',
+      tableName: 'People',
+      headers: ['Name', 'Role'],
+      rows: [['Alice Example', 'PI']],
+      recordIds: ['recqqg9hRlNLclOoE'],
+      primaryFieldName: 'Name',
+    })
+
+    const generated = generateRdf(new ApplicationProfile(), new MappingState(), [source])
+    const model = buildBrowseModel(generated.store, [], [source])
+    const peopleGroup = model.groups.find(group => group.classIri === 'https://w3id.org/ardmp/staging/class/people')
+
+    expect(peopleGroup?.subjects[0]?.iri).toBe('https://w3id.org/ardmp/staging/instance/recqqg9hRlNLclOoE')
+    expect(peopleGroup?.subjects[0]?.label).toBe('Alice Example')
   })
 })
