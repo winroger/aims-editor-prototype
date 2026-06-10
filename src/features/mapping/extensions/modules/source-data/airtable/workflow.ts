@@ -1,6 +1,9 @@
-import { createRemoteTabularSource, type DataSource } from '@/domain/DataSource'
+import { createRemoteTabularSource, type DataSource, type DataSourceColumn } from '@/domain/DataSource'
 import type { useDataStore } from '@/stores/dataStore'
-import { AirtableService } from '@/features/mapping/extensions/modules/source-data/airtable/client'
+import {
+  AirtableService,
+  airtableFieldToDataSourceColumn,
+} from '@/features/mapping/extensions/modules/source-data/airtable/client'
 
 type DataStore = ReturnType<typeof useDataStore>
 
@@ -17,6 +20,7 @@ export function createAirtableDataSource(options: {
   headers: string[]
   rows: unknown[][]
   recordIds: string[]
+  columns?: DataSourceColumn[]
   primaryFieldName?: string
 }): DataSource {
   return createRemoteTabularSource({
@@ -30,6 +34,7 @@ export function createAirtableDataSource(options: {
     },
     headers: options.headers,
     rows: options.rows,
+    columns: options.columns,
     recordIds: options.recordIds,
   })
 }
@@ -86,6 +91,7 @@ export async function refreshAirtableBase(dataStore: DataStore, pat: string, bas
     const fieldOrder = fieldOrderByTableId.get(tableId) ?? table.headers
     const metadataTable = metadataTableById.get(tableId)
     const primaryFieldName = metadataTable?.fields?.find(field => field.id === metadataTable.primaryFieldId)?.name
+    const columns = metadataTable?.fields?.map(airtableFieldToDataSourceColumn)
     const { headers, rows, recordIds } = AirtableService.recordsToTable(records, fieldOrder)
     dataStore.upsertSource(createAirtableDataSource({
       baseId,
@@ -94,6 +100,7 @@ export async function refreshAirtableBase(dataStore: DataStore, pat: string, bas
       headers,
       rows,
       recordIds,
+      columns,
       primaryFieldName,
     }))
   }

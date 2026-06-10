@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { ApplicationProfile, parseShaclProfile } from '@/domain/NodeShape'
 import { MappingState } from '@/domain/Mapping'
 import { buildBrowseModel } from '@/services/browse/browseService'
+import { buildExploreDataset } from '@/services/explore/exploreService'
 import { generateRdf } from '@/services/rdf/rdfGenerator'
 import { buildRuntimeStagingShapes, hybridShapeIriForSource, stagingShapeIriForSource } from '@/services/mapping/stagingShapes'
 import { airtableSource } from '@/test/dataSources'
+import { createAirtableDataSource } from '@/features/mapping/extensions/modules/source-data/airtable/workflow'
 
 const HYBRID_LOCATION_SHAPE = `
 @prefix sh:  <http://www.w3.org/ns/shacl#> .
@@ -32,6 +34,47 @@ describe('stagingShapes', () => {
       'https://w3id.org/ardmp/staging/property/people__name',
       'https://w3id.org/ardmp/staging/property/people__email',
     ])
+  })
+
+  it('uses preserved source datatypes in runtime staging shapes and explore fields', () => {
+    const source = createAirtableDataSource({
+      baseId: 'app123',
+      tableId: 'tblMetrics',
+      tableName: 'Metrics',
+      headers: ['Count', 'Published', 'Approved'],
+      rows: [[42, '2026-06-10', true]],
+      columns: [
+        { name: 'Count', datatype: 'number', nativeType: 'number' },
+        { name: 'Published', datatype: 'date', nativeType: 'date' },
+        { name: 'Approved', datatype: 'boolean', nativeType: 'checkbox' },
+      ],
+      recordIds: ['recAAA'],
+    })
+    const mapping = new MappingState()
+    const runtimeShapes = buildRuntimeStagingShapes([source], mapping)
+    const generated = generateRdf(new ApplicationProfile(), mapping, [source])
+    const dataset = buildExploreDataset(generated.store, runtimeShapes.nodeShapes, [source])
+    const metricsClass = dataset.classes.find(entry => entry.classIri === 'https://w3id.org/ardmp/staging/class/metrics')
+
+    const countProperty = runtimeShapes.nodeShapes[0]?.properties.find(property => property.name === 'Count')
+    const publishedProperty = runtimeShapes.nodeShapes[0]?.properties.find(property => property.name === 'Published')
+    const approvedProperty = runtimeShapes.nodeShapes[0]?.properties.find(property => property.name === 'Approved')
+
+    expect(countProperty?.datatype?.value).toBe('http://www.w3.org/2001/XMLSchema#decimal')
+    expect(publishedProperty?.datatype?.value).toBe('http://www.w3.org/2001/XMLSchema#date')
+    expect(approvedProperty?.datatype?.value).toBe('http://www.w3.org/2001/XMLSchema#boolean')
+    expect(metricsClass?.fields.find(field => field.label === 'Count')).toEqual(expect.objectContaining({
+      kind: 'number',
+      datatype: 'http://www.w3.org/2001/XMLSchema#decimal',
+    }))
+    expect(metricsClass?.fields.find(field => field.label === 'Published')).toEqual(expect.objectContaining({
+      kind: 'string',
+      datatype: 'http://www.w3.org/2001/XMLSchema#date',
+    }))
+    expect(metricsClass?.fields.find(field => field.label === 'Approved')).toEqual(expect.objectContaining({
+      kind: 'string',
+      datatype: 'http://www.w3.org/2001/XMLSchema#boolean',
+    }))
   })
 
   it('omits disabled and explicitly mapped staging columns from runtime shapes', () => {

@@ -10,6 +10,8 @@
 
 const API_BASE = 'https://api.airtable.com'
 
+import type { DataSourceColumn, DataSourceColumnDatatype } from '@/domain/DataSource'
+
 export interface AirtableBase {
   id: string
   name: string
@@ -20,7 +22,13 @@ export interface AirtableTable {
   id: string
   name: string
   primaryFieldId?: string
-  fields?: { id: string; name: string; type: string }[]
+  fields?: AirtableField[]
+}
+
+export interface AirtableField {
+  id: string
+  name: string
+  type: string
 }
 
 export interface AirtableRecord {
@@ -94,6 +102,64 @@ export class AirtableService {
     const rows = records.map(r => headers.map(h => r.fields[h] ?? null))
     const recordIds = records.map(r => r.id)
     return { headers, rows, recordIds }
+  }
+}
+
+export function airtableFieldToDataSourceColumn(field: AirtableField): DataSourceColumn {
+  return {
+    name: field.name,
+    datatype: normalizeAirtableFieldDatatype(field.type),
+    nativeType: field.type,
+  }
+}
+
+function normalizeAirtableFieldDatatype(type: string): DataSourceColumnDatatype {
+  switch (type) {
+    case 'autoNumber':
+    case 'count':
+    case 'currency':
+    case 'number':
+    case 'percent':
+    case 'rating':
+      return 'number'
+    case 'checkbox':
+      return 'boolean'
+    case 'date':
+      return 'date'
+    case 'createdTime':
+    case 'dateTime':
+    case 'lastModifiedTime':
+      return 'datetime'
+    case 'duration':
+      return 'duration'
+    case 'multipleAttachments':
+    case 'multipleCollaborators':
+    case 'multipleLookupValues':
+    case 'multipleRecordLinks':
+    case 'multipleSelects':
+      return 'array'
+    case 'formula':
+    case 'rollup':
+      return 'unknown'
+    case 'button':
+    case 'richText':
+      return 'object'
+    case 'aiText':
+    case 'barcode':
+    case 'createdBy':
+    case 'email':
+    case 'externalSyncSource':
+    case 'lastModifiedBy':
+    case 'multilineText':
+    case 'phoneNumber':
+    case 'richTextV2':
+    case 'singleCollaborator':
+    case 'singleLineText':
+    case 'singleSelect':
+    case 'url':
+      return 'string'
+    default:
+      return 'unknown'
   }
 }
 

@@ -1,5 +1,5 @@
 import { parseShaclProfile, type NodeShape, type PropertyShape, type ShaclProfile } from '@/domain/NodeShape'
-import type { DataSource } from '@/domain/DataSource'
+import type { DataSource, DataSourceColumnDatatype } from '@/domain/DataSource'
 import type { MappingState } from '@/domain/Mapping'
 import {
   ARDMP_STAGING_CLASS_BASE,
@@ -13,6 +13,11 @@ import {
 
 const STAGING_PROFILE_IRI = 'https://w3id.org/ardmp/staging/profile/runtime'
 const STAGING_SHAPE_BASE = 'https://w3id.org/ardmp/staging/shape/'
+const XSD_BOOLEAN = 'http://www.w3.org/2001/XMLSchema#boolean'
+const XSD_DATE = 'http://www.w3.org/2001/XMLSchema#date'
+const XSD_DATE_TIME = 'http://www.w3.org/2001/XMLSchema#dateTime'
+const XSD_DECIMAL = 'http://www.w3.org/2001/XMLSchema#decimal'
+const XSD_DURATION = 'http://www.w3.org/2001/XMLSchema#duration'
 const XSD_STRING = 'http://www.w3.org/2001/XMLSchema#string'
 
 export interface RuntimeStagingShapes {
@@ -112,7 +117,7 @@ function buildShapeBlock(
       description: `Auto-generated staging field for ${source.name} / ${column.header}`,
       path: propertyLocalName,
       pathIsPrefixed: true,
-      datatype: column.linkedTargetSourceId ? undefined : XSD_STRING,
+      datatype: column.linkedTargetSourceId ? undefined : stagingDatatypeForColumn(source, column.header),
       node: column.linkedTargetSourceId
         ? (linkedTargetHybridOwner
           ? hybridShapeIriForSource(targetSource ?? { name: column.linkedTargetSourceId })
@@ -142,6 +147,32 @@ interface PropertyBlockSpec {
   datatype?: string
   node?: string
   nodeKind?: string
+}
+
+function stagingDatatypeForColumn(source: DataSource, header: string): string {
+  const datatype = source.columns?.find(column => column.name === header)?.datatype
+  return xsdDatatypeForSourceColumn(datatype)
+}
+
+function xsdDatatypeForSourceColumn(datatype: DataSourceColumnDatatype | undefined): string {
+  switch (datatype) {
+    case 'boolean':
+      return XSD_BOOLEAN
+    case 'date':
+      return XSD_DATE
+    case 'datetime':
+      return XSD_DATE_TIME
+    case 'duration':
+      return XSD_DURATION
+    case 'number':
+      return XSD_DECIMAL
+    case 'array':
+    case 'object':
+    case 'string':
+    case 'unknown':
+    default:
+      return XSD_STRING
+  }
 }
 
 function uniquePropertiesByPath(properties: PropertyShape[]): PropertyShape[] {

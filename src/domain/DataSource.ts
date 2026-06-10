@@ -19,6 +19,8 @@ export interface DataSource {
   readonly headers: string[]
   /** Raw rows, indexed by header position. */
   readonly rows: unknown[][]
+  /** Optional per-column metadata preserved from the source system. */
+  readonly columns?: DataSourceColumn[]
   /** Optional: internal helper sources should not appear as standalone table nodes. */
   readonly hidden?: boolean
   /**
@@ -26,6 +28,23 @@ export interface DataSource {
    * generating RDF subjects. When absent the first column value is used.
    */
   readonly recordIds?: string[]
+}
+
+export type DataSourceColumnDatatype =
+  | 'array'
+  | 'boolean'
+  | 'date'
+  | 'datetime'
+  | 'duration'
+  | 'number'
+  | 'object'
+  | 'string'
+  | 'unknown'
+
+export interface DataSourceColumn {
+  name: string
+  datatype: DataSourceColumnDatatype
+  nativeType?: string
 }
 
 export type DataSourceRole = 'source' | 'derived'
@@ -58,6 +77,7 @@ export class TabularDataSource implements DataSource {
   readonly name: string
   readonly headers: string[]
   readonly rows: unknown[][]
+  readonly columns?: DataSourceColumn[]
   readonly role: DataSourceRole
   readonly origin: DataSourceOrigin
   readonly hidden?: boolean
@@ -68,6 +88,7 @@ export class TabularDataSource implements DataSource {
     name: string
     headers: string[]
     rows: unknown[][]
+    columns?: DataSourceColumn[]
     recordIds?: string[]
     role?: DataSourceRole
     origin?: DataSourceOrigin
@@ -77,6 +98,7 @@ export class TabularDataSource implements DataSource {
     this.name = options.name
     this.headers = options.headers
     this.rows = options.rows
+    this.columns = options.columns?.map(column => ({ ...column }))
     this.recordIds = options.recordIds
     this.role = options.role ?? 'source'
     this.origin = options.origin ?? { kind: 'generated' }
@@ -89,6 +111,7 @@ export function createUploadedTabularSource(options: {
   name: string
   headers: string[]
   rows: unknown[][]
+  columns?: DataSourceColumn[]
   recordIds?: string[]
   filename?: string
   mediaType?: string
@@ -110,6 +133,7 @@ export function createRemoteTabularSource(options: {
   externalRef: Record<string, string>
   headers: string[]
   rows: unknown[][]
+  columns?: DataSourceColumn[]
   recordIds?: string[]
 }): DataSource {
   return new TabularDataSource({
@@ -117,6 +141,7 @@ export function createRemoteTabularSource(options: {
     name: options.name,
     headers: options.headers,
     rows: options.rows,
+    columns: options.columns,
     recordIds: options.recordIds,
     origin: {
       kind: 'remote-table',
@@ -133,6 +158,7 @@ export function createNodeOutputTabularSource(options: {
   nodeId: string
   headers: string[]
   rows: unknown[][]
+  columns?: DataSourceColumn[]
   recordIds?: string[]
   hidden?: boolean
 }): DataSource {
@@ -141,6 +167,7 @@ export function createNodeOutputTabularSource(options: {
     name: options.name,
     headers: options.headers,
     rows: options.rows,
+    columns: options.columns,
     recordIds: options.recordIds,
     role: 'derived',
     hidden: options.hidden ?? true,

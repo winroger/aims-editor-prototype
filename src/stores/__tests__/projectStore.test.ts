@@ -68,6 +68,7 @@ describe('projectStore snapshot persistence', () => {
       tableName: 'Projects',
       headers: ['Name'],
       rows: [['Alpha']],
+      columns: [{ name: 'Name', datatype: 'string', nativeType: 'singleLineText' }],
       recordIds: ['rec1'],
     }))
 
@@ -122,6 +123,9 @@ describe('projectStore snapshot persistence', () => {
     expect(project.project.createdAt).toBe('2026-05-13T10:00:00.000Z')
     expect(data.sources).toHaveLength(1)
     expect(data.sources[0]?.id).toBe('airtable:appBase:tblProjects')
+    expect(data.sources[0]?.columns).toEqual([
+      { name: 'Name', datatype: 'string', nativeType: 'singleLineText' },
+    ])
     expect(shapes.profiles).toHaveLength(1)
     expect(metadata.rootProfiles).toHaveLength(1)
     expect(metadata.metadataTurtle['http://example.org/meta-profile']).toContain('Dataset A')

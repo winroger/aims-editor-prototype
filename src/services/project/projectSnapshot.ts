@@ -1,4 +1,9 @@
-import { TabularDataSource, type DataSource, type DataSourceOrigin } from '@/domain/DataSource'
+import {
+  TabularDataSource,
+  type DataSource,
+  type DataSourceColumn,
+  type DataSourceOrigin,
+} from '@/domain/DataSource'
 import { parseShaclProfile, type ShaclProfile } from '@/domain/NodeShape'
 import type { MappingEdge } from '@/domain/Mapping'
 import {
@@ -14,6 +19,7 @@ export interface DataSourceSnapshot {
   origin?: DataSourceOrigin
   headers: string[]
   rows: unknown[][]
+  columns?: DataSourceColumn[]
   recordIds?: string[]
   hidden?: boolean
   /** @deprecated legacy Airtable snapshot field. Use origin.externalRef instead. */
@@ -166,6 +172,10 @@ function cloneRows(rows: unknown[][]): unknown[][] {
   return rows.map(row => [...row])
 }
 
+function cloneColumns(columns: DataSourceColumn[] | undefined): DataSourceColumn[] | undefined {
+  return columns?.map(column => ({ ...column }))
+}
+
 export function createDataSourceSnapshots(sources: DataSource[]): DataSourceSnapshot[] {
   return sources.map(source => ({
     id: source.id,
@@ -175,6 +185,7 @@ export function createDataSourceSnapshots(sources: DataSource[]): DataSourceSnap
     origin: source.origin ? { ...source.origin } : undefined,
     headers: [...source.headers],
     rows: cloneRows(source.rows),
+    columns: cloneColumns(source.columns),
     recordIds: source.recordIds ? [...source.recordIds] : undefined,
     hidden: source.hidden,
   }))
@@ -187,6 +198,7 @@ export function restoreDataSourcesFromSnapshot(snapshots: DataSourceSnapshot[]):
       name: snapshot.name,
       headers: [...snapshot.headers],
       rows: cloneRows(snapshot.rows),
+      columns: cloneColumns(snapshot.columns),
       recordIds: snapshot.recordIds ? [...snapshot.recordIds] : undefined,
       role: snapshot.role ?? (snapshot.hidden ? 'derived' : 'source'),
       hidden: snapshot.hidden,

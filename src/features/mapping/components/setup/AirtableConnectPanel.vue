@@ -10,6 +10,7 @@ import {
   AirtableService,
   type AirtableBase,
   type AirtableTable,
+  airtableFieldToDataSourceColumn,
 } from '@/features/mapping/extensions/modules/source-data/airtable/client'
 import { createAirtableDataSource } from '@/features/mapping/extensions/modules/source-data/airtable/workflow'
 import { loadAirtableCredentials, saveAirtableCredentials, clearAirtableCredentials } from '@/services/infrastructure/storage/credentialStore'
@@ -146,6 +147,7 @@ async function importSelected(): Promise<void> {
         headers,
         rows,
         recordIds,
+        columns: table.fields?.map(airtableFieldToDataSourceColumn),
         primaryFieldName,
       }))
     }

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { ApplicationProfile, parseShaclProfile } from '@/domain/NodeShape'
 import { MappingState } from '@/domain/Mapping'
-import { restoreDataSourcesFromSnapshot } from '@/services/project/projectSnapshot'
 import { getEmbeddedExampleProjectSnapshot } from '@/services/project/loadEmbeddedExampleProject'
 import { generateRdf } from '@/services/rdf/rdfGenerator'
 import { buildBrowseModel } from '@/services/browse/browseService'
 import { createAirtableDataSource } from '@/features/mapping/extensions/modules/source-data/airtable/workflow'
+import { createDataSourceSnapshots, restoreDataSourcesFromSnapshot } from '@/services/project/projectSnapshot'
 
 describe('browseService', () => {
   it('uses gnd:preferredName as the building label in the minimal showcase example', () => {
@@ -46,5 +46,29 @@ describe('browseService', () => {
 
     expect(peopleGroup?.subjects[0]?.iri).toBe('https://w3id.org/ardmp/staging/instance/recqqg9hRlNLclOoE')
     expect(peopleGroup?.subjects[0]?.label).toBe('Alice Example')
+  })
+
+  it('preserves Airtable column datatypes through snapshot roundtrips', () => {
+    const source = createAirtableDataSource({
+      baseId: 'app123',
+      tableId: 'tbl123',
+      tableName: 'Metrics',
+      headers: ['Count', 'Published', 'Approved'],
+      rows: [[42, '2026-06-10', true]],
+      columns: [
+        { name: 'Count', datatype: 'number', nativeType: 'number' },
+        { name: 'Published', datatype: 'date', nativeType: 'date' },
+        { name: 'Approved', datatype: 'boolean', nativeType: 'checkbox' },
+      ],
+      recordIds: ['rec42'],
+    })
+
+    const [restored] = restoreDataSourcesFromSnapshot(createDataSourceSnapshots([source]))
+
+    expect(restored?.columns).toEqual([
+      { name: 'Count', datatype: 'number', nativeType: 'number' },
+      { name: 'Published', datatype: 'date', nativeType: 'date' },
+      { name: 'Approved', datatype: 'boolean', nativeType: 'checkbox' },
+    ])
   })
 })
