@@ -88,7 +88,7 @@ onMounted(() => { void loadProfiles() })
     <div class="toolbar">
       <label class="field field-stack search-field">
         <span>Profile durchsuchen</span>
-        <InputText v-model="search" placeholder="RO-kit dataset" fluid />
+        <InputText v-model="search" placeholder="Profil suchen" fluid />
       </label>
       <Button
         label="Aktualisieren"
@@ -98,10 +98,6 @@ onMounted(() => { void loadProfiles() })
         @click="loadProfiles"
       />
     </div>
-
-    <Message severity="info" :closable="false">
-      Es werden aktuell nur Profile mit RO-kit oder RO-crate Bezug aus dem Metadata Profile Service angeboten.
-    </Message>
 
     <Message v-if="error" severity="error" :closable="false">
       {{ error }}

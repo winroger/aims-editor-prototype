@@ -32,12 +32,13 @@ export const useShapesStore = defineStore('shapes', () => {
   /** All NodeShapes across all profiles, de-duplicated. */
   const nodeShapes = computed<NodeShape[]>(() => ap.value.allNodeShapes())
 
-  /** Shapes suitable for the Mapping canvas (data + reference kinds). */
+  /** Shapes suitable for the Mapping canvas. */
   const canvasShapes = computed<NodeShape[]>(() =>
     nodeShapes.value.filter(ns => {
       if (ap.value.inheritedImportedNodeShapeIds().has(ns.nodeId.value)) return false
+      const isDirectlyLoadedRoot = profiles.value.some(profile => profile.iri === ns.sourceProfileIri && profile.source !== profile.iri)
       const k = classifyShape(ns)
-      return k === 'data' || k === 'reference'
+      return isDirectlyLoadedRoot || k === 'data' || k === 'reference'
     }),
   )
 

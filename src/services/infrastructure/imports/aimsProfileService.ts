@@ -10,14 +10,8 @@ export interface AimsProfile {
   mimeType?: string
 }
 
-function matchesTargetProfiles(name: string | undefined): boolean {
-  const value = name?.toLowerCase() ?? ''
-  return value.includes('ro-kit') || value.includes('ro-crate')
-}
-
 export async function loadAimsProfiles(): Promise<AimsProfile[]> {
   const url = new URL(AIMS_API)
-  url.searchParams.set('query', 'ro-kit')
   url.searchParams.set('state', 'public')
   url.searchParams.set('includeDefinition', 'false')
 
@@ -38,9 +32,7 @@ export async function loadAimsProfiles(): Promise<AimsProfile[]> {
       ? data.value
       : []
 
-  return profiles
-    .filter(profile => matchesTargetProfiles(profile.name))
-    .sort((left, right) => left.name.localeCompare(right.name))
+  return profiles.sort((left, right) => left.name.localeCompare(right.name))
 }
 
 export async function fetchAimsProfileTurtle(profile: AimsProfile): Promise<string> {

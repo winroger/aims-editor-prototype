@@ -94,11 +94,8 @@ function inheritedFromLabel(p: PropertyShape): string {
         />
 
         <template v-if="isObjectRef(p)">
-          <i class="pi pi-link fk-icon" title="Inherited FK reference" />
+          <i class="pi pi-link fk-icon" :title="refShapeLabel(p)" />
           <span class="prop-name">{{ propertyLabel(p) }}</span>
-          <span class="fk-badge" :title="`References: ${refShapeLabel(p)}`">
-            → {{ refShapeLabel(p) }}
-          </span>
           <span class="prop-meta">{{ cardinality(p) }}</span>
           <Handle
             v-if="p.path"
@@ -115,7 +112,7 @@ function inheritedFromLabel(p: PropertyShape): string {
           <span class="prop-meta">{{ cardinality(p) }}</span>
         </template>
 
-        <span class="inheritance-badge" :title="`Inherited from ${inheritedFromLabel(p)}`">{{ inheritedFromLabel(p) }}</span>
+        <i class="pi pi-sitemap inheritance-icon" :title="`Inherited from ${inheritedFromLabel(p)}`" />
       </li>
     </ul>
 
@@ -138,11 +135,8 @@ function inheritedFromLabel(p: PropertyShape): string {
 
         <!-- FK reference property -->
         <template v-if="isObjectRef(p)">
-          <i class="pi pi-link fk-icon" title="FK-Referenz" />
+          <i class="pi pi-link fk-icon" :title="refShapeLabel(p)" />
           <span class="prop-name">{{ propertyLabel(p) }}</span>
-          <span class="fk-badge" :title="`Referenziert: ${refShapeLabel(p)}`">
-            → {{ refShapeLabel(p) }}
-          </span>
           <span class="prop-meta">{{ cardinality(p) }}</span>
           <Handle
             v-if="p.path"
@@ -257,17 +251,6 @@ header {
   font-size: 0.82rem;
 }
 
-.fk-badge {
-  font-size: 0.7rem;
-  background: var(--shape-badge-bg);
-  color: var(--shape-badge-color);
-  border: 1px solid var(--shape-badge-border);
-  padding: 1px 5px;
-  border-radius: 4px;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
 .type-badge {
   font-size: 0.7rem;
   background: var(--color-surface-2);
@@ -287,14 +270,9 @@ header {
   flex-shrink: 0;
 }
 
-.inheritance-badge {
-  font-size: 0.68rem;
-  background: var(--shape-badge-bg);
+.inheritance-icon {
+  font-size: 0.75rem;
   color: var(--shape-badge-color);
-  border: 1px solid var(--shape-badge-border);
-  padding: 1px 5px;
-  border-radius: 4px;
-  white-space: nowrap;
   flex-shrink: 0;
 }
 
