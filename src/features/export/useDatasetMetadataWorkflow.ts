@@ -4,8 +4,10 @@ import { classifyShape, type ShaclProfile } from '@/domain/NodeShape'
 import { extractDatasetMetadata } from '@/services/export/datasetMetadata'
 import { DATASET_SCHEMA_CATALOG } from '@/services/infrastructure/imports/embeddedProfiles'
 import type { useMetadataStore } from '@/stores/metadataStore'
+import type { useProjectStore } from '@/stores/projectStore'
 
 type MetadataStore = ReturnType<typeof useMetadataStore>
+type ProjectStore = ReturnType<typeof useProjectStore>
 
 const ROKIT_DATASET_PROFILE_IRI = 'https://w3id.org/nfdi4ing/profiles/4a5d4526-34d4-4b00-8f8f-4b13dd48e6d6'
 const DEFAULT_BASE_URI = 'http://example.org/'
@@ -16,6 +18,7 @@ const DCAT_DATASET = namedNode('http://www.w3.org/ns/dcat#Dataset')
 
 interface UseDatasetMetadataWorkflowOptions {
   metadataStore: MetadataStore
+  projectStore: ProjectStore
   rootProfiles: ComputedRef<ShaclProfile[]>
   combinedTurtle: Ref<string>
 }
@@ -148,6 +151,10 @@ export function useDatasetMetadataWorkflow(options: UseDatasetMetadataWorkflowOp
     }
 
     options.metadataStore.setMetadataTurtle(ROKIT_DATASET_PROFILE_IRI, draftMetadataTurtle.value)
+    const metadataName = extractDatasetMetadata(draftMetadataTurtle.value).name?.trim()
+    if (metadataName) {
+      options.projectStore.project.title = metadataName
+    }
     isEditing.value = false
   }
 

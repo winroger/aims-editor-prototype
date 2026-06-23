@@ -168,6 +168,69 @@ export interface ProjectSnapshot {
   explore?: ExploreSnapshot
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function assertString(value: unknown, message: string): asserts value is string {
+  if (typeof value !== 'string') throw new Error(message)
+}
+
+function assertStringArray(value: unknown, message: string): asserts value is string[] {
+  if (!Array.isArray(value) || value.some(entry => typeof entry !== 'string')) {
+    throw new Error(message)
+  }
+}
+
+function assertRecord(value: unknown, message: string): asserts value is Record<string, unknown> {
+  if (!isRecord(value)) throw new Error(message)
+}
+
+export function assertProjectSnapshotLike(value: unknown): asserts value is ProjectSnapshot {
+  if (!isRecord(value)) throw new Error('Project file is not an object.')
+  if (value.version !== 1) throw new Error('Project file uses an unsupported version.')
+
+  assertRecord(value.project, 'Project file is missing project metadata.')
+  assertString(value.project.title, 'Project file is missing the project title.')
+  assertString(value.project.createdAt, 'Project file is missing the project creation date.')
+
+  if (!Array.isArray(value.sources)) throw new Error('Project file is missing sources.')
+  if (!Array.isArray(value.shapeProfiles)) throw new Error('Project file is missing shape profiles.')
+  if (!Array.isArray(value.metadataProfiles)) throw new Error('Project file is missing metadata profiles.')
+  assertStringArray(value.metadataRootIris, 'Project file is missing metadata root IRIs.')
+  assertRecord(value.metadataTurtle, 'Project file is missing metadata turtle values.')
+  assertRecord(value.mapping, 'Project file is missing mapping state.')
+  if (!Array.isArray(value.mapping.edges)) throw new Error('Project file is missing mapping edges.')
+  assertRecord(value.mapping.extensionState, 'Project file is missing mapping extension state.')
+
+  if (value.explore !== undefined) {
+    assertRecord(value.explore, 'Project file contains invalid explore state.')
+    if (!Array.isArray(value.explore.dataframes)) {
+      throw new Error('Project file contains invalid explore dataframes.')
+    }
+    if (!Array.isArray(value.explore.charts)) {
+      throw new Error('Project file contains invalid explore charts.')
+    }
+  }
+}
+
+export function parseProjectSnapshotJson(text: string): ProjectSnapshot {
+  let parsed: unknown
+
+  try {
+    parsed = JSON.parse(text) as unknown
+  } catch {
+    throw new Error('Project file is not valid JSON.')
+  }
+
+  assertProjectSnapshotLike(parsed)
+  return parsed
+}
+
+export function serializeProjectSnapshot(snapshot: ProjectSnapshot): string {
+  return JSON.stringify(snapshot, null, 2)
+}
+
 function cloneRows(rows: unknown[][]): unknown[][] {
   return rows.map(row => [...row])
 }

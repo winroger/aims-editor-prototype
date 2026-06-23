@@ -6,7 +6,7 @@
  * enrichment, transformation, and reset. The canvas itself
  * stays minimal — no legend, no help asides, no info banners.
  */
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { VueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
@@ -22,6 +22,7 @@ import { useCanvasGraph } from '@/features/mapping/useCanvasGraph'
 import { useCanvasConnections } from '@/features/mapping/useCanvasConnections'
 import { useCanvasSetupMenu } from '@/features/mapping/useCanvasSetupMenu'
 import { useCanvasPreviews } from '@/features/mapping/useCanvasPreviews'
+import { registerProjectUiStateReset } from '@/services/project/projectUiState'
 import CanvasDialogs from '@/features/mapping/components/CanvasDialogs.vue'
 import MappingValidationSidebar from '@/features/mapping/components/MappingValidationSidebar.vue'
 import Menubar from 'primevue/menubar'
@@ -76,6 +77,14 @@ function resetCanvasUiState(): void {
   shapePreviewOpen.value = false
   validationSidebarOpen.value = false
 }
+
+onMounted(() => {
+  registerProjectUiStateReset(resetCanvasUiState)
+})
+
+onBeforeUnmount(() => {
+  registerProjectUiStateReset(null)
+})
 
 // ---------- SHACL validation ----------
 const {

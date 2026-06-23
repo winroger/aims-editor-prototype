@@ -16,12 +16,13 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { isCanvasVisibleDataSource } from '@/domain/DataSource'
+import type { NodeShape } from '@/domain/NodeShape'
 import { useShapesStore } from '@/stores/shapesStore'
 import { useDataStore } from '@/stores/dataStore'
 import { useMappingStore } from '@/stores/mappingStore'
 import { generateRdf, serializeGraph } from '@/services/rdf/rdfGenerator'
 import { buildBrowseModel, type BrowseModel, type BrowseSubject } from '@/services/browse/browseService'
-import { buildRuntimeStagingShapes } from '@/services/mapping/stagingShapes'
+import { buildRuntimeStagingShapes, type RuntimeStagingShapes } from '@/services/mapping/stagingShapes'
 import {
   classLabelsForSubject,
   columnsForSubjects,
@@ -52,11 +53,17 @@ const combinedShapesTurtle = computed(() =>
   profiles.value.map(p => p.rawTurtle).join('\n\n'),
 )
 
-const runtimeStagingShapes = computed(() =>
-  buildRuntimeStagingShapes(sources.value, mappingStore.state, nodeShapes.value),
-)
+function createEmptyRuntimeStagingShapes(): RuntimeStagingShapes {
+  return {
+    profile: null,
+    nodeShapes: [],
+    turtle: '',
+  }
+}
 
-const browseNodeShapes = computed(() => [
+const runtimeStagingShapes = ref<RuntimeStagingShapes>(createEmptyRuntimeStagingShapes())
+
+const browseNodeShapes = computed<readonly NodeShape[]>(() => [
   ...nodeShapes.value,
   ...runtimeStagingShapes.value.nodeShapes,
 ])
@@ -78,18 +85,32 @@ const isGenerating = ref(false)
 
 async function regenerate(): Promise<void> {
   if (!canBrowse.value) {
+    runtimeStagingShapes.value = createEmptyRuntimeStagingShapes()
     model.value = null
     ttlOutput.value = ''
+    generationError.value = null
     return
   }
   isGenerating.value = true
   generationError.value = null
   try {
+    const nextRuntimeStagingShapes = buildRuntimeStagingShapes(
+      sources.value,
+      mappingStore.state,
+      nodeShapes.value,
+    )
+    runtimeStagingShapes.value = nextRuntimeStagingShapes
+
     const result = generateRdf(ap.value, mappingStore.state, sources.value)
-    model.value = buildBrowseModel(result.store, browseNodeShapes.value, sources.value)
+    model.value = buildBrowseModel(
+      result.store,
+      [...nodeShapes.value, ...nextRuntimeStagingShapes.nodeShapes],
+      sources.value,
+    )
     ttlOutput.value = await serializeGraph(result.store, 'text/turtle')
   } catch (err) {
     generationError.value = err instanceof Error ? err.message : String(err)
+    runtimeStagingShapes.value = createEmptyRuntimeStagingShapes()
     model.value = null
     ttlOutput.value = ''
   } finally {

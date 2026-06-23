@@ -57,6 +57,7 @@ const {
   saveMetadata: commitMetadata,
 } = useDatasetMetadataWorkflow({
   metadataStore,
+  projectStore,
   rootProfiles,
   combinedTurtle,
 })
