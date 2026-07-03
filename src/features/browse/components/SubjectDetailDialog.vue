@@ -600,13 +600,16 @@ function localName(iri: string): string {
 .subject-preview {
   display: flex;
   justify-content: flex-start;
+  width: 100%;
 }
 
 .subject-preview-image {
   display: block;
-  max-width: min(100%, 420px);
-  max-height: 240px;
-  object-fit: cover;
+  width: 100%;
+  max-width: none;
+  max-height: 42vh;
+  object-fit: contain;
+  object-position: center;
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
   background: var(--color-surface-1);

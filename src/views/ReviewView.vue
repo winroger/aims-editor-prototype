@@ -583,7 +583,8 @@ async function copyTurtle(): Promise<void> {
   width: 64px;
   height: 64px;
   flex: 0 0 64px;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: center;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
   background: var(--color-surface-1);
@@ -631,7 +632,8 @@ async function copyTurtle(): Promise<void> {
 .subject-card__thumbnail {
   width: 100%;
   aspect-ratio: 4 / 3;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: center;
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
   background: var(--color-surface-1);
