@@ -5,7 +5,7 @@ import { CANVAS_EDGE_STYLES } from '@/features/mapping/canvasTheme'
 export type CanvasEdgeKind = 'mapping' | 'structural' | 'inherited' | 'extension'
 
 export function applyDefaultExtensionEdgeStyle(edge: Omit<Edge, 'type'> & { type?: string }): Edge {
-  const relationLabel = isHiddenEdge(edge.style) ? '' : (edge.label ?? inferCanvasEdgeRelationLabel(edge))
+  const relationLabel = isHiddenEdge(edge.style) ? '' : resolveExtensionRelationLabel(edge)
   return {
     ...edge,
     type: edge.type ?? 'default',
@@ -33,6 +33,15 @@ export function inferCanvasEdgeRelationLabel(edge: Pick<Edge, 'sourceHandle' | '
   if (edge.targetHandle) return humanizeHandle(edge.targetHandle)
   if (edge.sourceHandle) return humanizeHandle(edge.sourceHandle)
   return ''
+}
+
+export function resolveExtensionRelationLabel(edge: Pick<Edge, 'source' | 'target' | 'sourceHandle' | 'targetHandle' | 'label'>): string {
+  if (edge.label) return String(edge.label)
+
+  const touchesShape = edge.source.startsWith('shape:') || edge.target.startsWith('shape:')
+  if (!touchesShape) return ''
+
+  return inferCanvasEdgeRelationLabel(edge)
 }
 
 function humanizeHandle(handle: string): string {

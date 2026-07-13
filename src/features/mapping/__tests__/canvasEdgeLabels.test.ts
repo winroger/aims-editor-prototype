@@ -15,4 +15,17 @@ describe('canvasEdgeLabels', () => {
     expect(edge.label).toBe('')
     expect(edge.data).toMatchObject({ relationLabel: '' })
   })
+
+  it('suppresses badges for non-SHACL extension input edges', () => {
+    const edge = applyDefaultExtensionEdgeStyle({
+      id: 'geo-ui:input',
+      source: 'src:buildings',
+      sourceHandle: 'h:GeoNames ID',
+      target: 'geonames:node-1',
+      targetHandle: 'geo-input',
+    })
+
+    expect(edge.label).toBe('')
+    expect(edge.data).toMatchObject({ relationLabel: '' })
+  })
 })

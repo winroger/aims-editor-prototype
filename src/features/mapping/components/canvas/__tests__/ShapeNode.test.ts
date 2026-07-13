@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { describe, expect, it, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -11,6 +9,14 @@ import {
   type ShapeCanvasNodeData,
 } from '@/features/mapping/canvasGraphBuilders'
 import ShapeNode from '@/features/mapping/components/canvas/ShapeNode.vue'
+import {
+  ARDMP_BUILDING_TTL,
+  ARDMP_GEOLOCATION_TTL,
+  ARDMP_ORGANIZATION_TTL,
+  ARDMP_RESOURCE_TTL,
+  ARDMP_STAKEHOLDER_TTL,
+  ARDMP_TIMBER_BUILDING_TTL,
+} from '@/features/mapping/components/canvas/__tests__/shapeNodeFixtures'
 import { useShapesStore } from '@/stores/shapesStore'
 
 const PROFILE_IDS = {
@@ -112,12 +118,12 @@ describe('ShapeNode', () => {
 
   it('separates inherited and own properties for the ARDMP timber building profile', () => {
     const ap = new ApplicationProfile()
-    ap.upsert(parseShaclProfile(readFixture('ardmp_timber-building-shape.ttl'), 'ardmp_timber-building-shape.ttl', 'uploaded', PROFILE_IDS.timberBuilding))
-    ap.upsert(parseShaclProfile(readFixture('ardmp_building-shape.ttl'), 'ardmp_building-shape.ttl', 'uploaded', PROFILE_IDS.building))
-    ap.upsert(parseShaclProfile(readFixture('ardmp_geolocation-shape.ttl'), 'ardmp_geolocation-shape.ttl', 'uploaded', PROFILE_IDS.location))
-    ap.upsert(parseShaclProfile(readFixture('ardmp_resource-shape.ttl'), 'ardmp_resource-shape.ttl', 'uploaded', PROFILE_IDS.resource))
-    ap.upsert(parseShaclProfile(readFixture('ardmp_stakeholder-shape.ttl'), 'ardmp_stakeholder-shape.ttl', 'uploaded', PROFILE_IDS.stakeholder))
-    ap.upsert(parseShaclProfile(readFixture('ardmp_organization.ttl'), 'ardmp_organization.ttl', 'uploaded', PROFILE_IDS.organization))
+    ap.upsert(parseShaclProfile(ARDMP_TIMBER_BUILDING_TTL, 'ardmp_timber-building-shape.ttl', 'uploaded', PROFILE_IDS.timberBuilding))
+    ap.upsert(parseShaclProfile(ARDMP_BUILDING_TTL, 'ardmp_building-shape.ttl', 'uploaded', PROFILE_IDS.building))
+    ap.upsert(parseShaclProfile(ARDMP_GEOLOCATION_TTL, 'ardmp_geolocation-shape.ttl', 'uploaded', PROFILE_IDS.location))
+    ap.upsert(parseShaclProfile(ARDMP_RESOURCE_TTL, 'ardmp_resource-shape.ttl', 'uploaded', PROFILE_IDS.resource))
+    ap.upsert(parseShaclProfile(ARDMP_STAKEHOLDER_TTL, 'ardmp_stakeholder-shape.ttl', 'uploaded', PROFILE_IDS.stakeholder))
+    ap.upsert(parseShaclProfile(ARDMP_ORGANIZATION_TTL, 'ardmp_organization.ttl', 'uploaded', PROFILE_IDS.organization))
 
     const shapesStore = useShapesStore()
     shapesStore.ap = ap
@@ -271,7 +277,3 @@ describe('ShapeNode', () => {
     expect(wrapper.text()).toContain('Stakeholder')
   })
 })
-
-function readFixture(fileName: string): string {
-  return readFileSync(resolve(process.cwd(), 'test-shapes', fileName), 'utf8')
-}
