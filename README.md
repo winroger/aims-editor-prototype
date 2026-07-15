@@ -1,62 +1,31 @@
-# Architectural RDM-Pipeline
+# SHACL Editor
 
-Architectural RDM-Pipeline is a browser-based tool for turning tabular research
-data into structured RDF datasets. It combines SHACL application profiles,
-CSV or Airtable sources, visual mapping, enrichment services, SHACL validation,
-metadata capture, and RO-Crate publishing in one Vue single-page application.
+SHACL Editor is a browser-based node editor for loading, resolving and
+inspecting SHACL profiles. The application is focused on profile
+representation: Turtle files and profiles from the Metadata Profile Service are
+loaded into a graph-oriented canvas where NodeShapes and their relationships
+can be explored visually.
 
-The app is designed for research data workflows where datasets should be
-understandable, reproducible, and publishable without hand-writing Turtle files
-or maintaining one-off conversion scripts.
-
-[Demo](https://winroger.github.io/ardmp/)
-
-
+The current app scope is intentionally narrow. It no longer manages tabular
+source data, mapping pipelines, SHACL validation, review dashboards or publish
+workflows.
 
 ## What You Can Do
 
-- Load SHACL profiles in Turtle format and resolve `owl:imports`.
-- Prepare source data from CSV files or Airtable tables.
-- Load a built-in showcase project from the mapping view for demonstrations or onboarding.
-- Build mappings visually on a Vue Flow canvas by connecting source columns to
-  SHACL property shapes.
-- Detect and display table-to-table references from Airtable-style linked
-  record fields.
-- Add enrichment nodes for GeoNames and Lobid/GND workflows.
-- Transform latitude/longitude columns into GeoSPARQL WKT points.
-- Generate RDF from the current mapping.
-- Review generated RDF subjects as cards, tables, or Turtle.
-- Validate generated RDF against the loaded SHACL profiles.
-- Capture RO-Crate dataset metadata through a SHACL-form based publish view.
-- Publish a ZIP package containing:
-  - `ro-crate-metadata.json`
-  - generated RDF as `data/dataset.ttl`
-  - source tables as CSV
-  - materialized enrichment or transform outputs as CSV when they are part of the exportable pipeline state
-  - resolved SHACL profiles
-  - RML mapping output
-
-## Who It Is For
-
-This tool is aimed at research data managers, data stewards, and domain experts
-who need to prepare RDF datasets from tabular data while staying aligned with
-SHACL-based application profiles. It is especially useful when a dataset needs
-both machine-readable RDF and packaging metadata for publication or archival
-handover.
+- Load SHACL profiles from Turtle files.
+- Load SHACL profiles from the Metadata Profile Service.
+- Resolve `owl:imports` recursively with local cache support.
+- Inspect NodeShapes and references in the node editor canvas.
+- Open a SHACL-form-based preview for loaded shapes.
+- Save and reload lightweight project snapshots containing the loaded profiles.
 
 ## Main Workflow
 
-1. Open the Prepare view.
-2. Optionally load the built-in showcase project from `Options` for a ready-made example.
-3. Add source data, for example a CSV file or an Airtable base.
-4. Add a target schema by uploading a SHACL profile or loading an embedded
-   profile.
-5. Connect table columns to SHACL properties on the canvas.
-6. Optionally add enrichment or transformation nodes.
-7. Review generated RDF in the Review view.
-8. Check validation results.
-9. Complete dataset metadata in the Publish view.
-10. Publish the RO-Crate ZIP.
+1. Open the editor view.
+2. Load one or more Turtle files or choose a profile from the Metadata Profile Service.
+3. Inspect the resulting shape graph in the canvas.
+4. Open shape previews to inspect individual nodes in more detail.
+5. Save the current profile set as a project snapshot when needed.
 
 ## Technology
 
@@ -67,11 +36,8 @@ handover.
 - PrimeVue
 - Vue Flow and Dagre
 - rdflib
-- shacl-engine
 - `@ulb-darmstadt/shacl-form`
-- PapaParse
 - localForage
-- JSZip
 - Vitest
 
 ## Development
@@ -98,14 +64,17 @@ http://localhost:5173/
 ```text
 src/
   assets/profiles/      bundled SHACL profiles
-  components/           app-wide shared UI
-  domain/               framework-light domain models
-  features/             feature modules for mapping, browse, export, SHACL UI
+  components/           app-wide shell and shared UI
+  domain/               SHACL domain parsing and model types
+  features/mapping/     node editor canvas and profile loading dialogs
+  features/shacl/       SHACL form viewer integration
   router/               route definitions
-  services/             RDF, validation, export, mapping, project, infrastructure
-  stores/               Pinia stores
+  services/infrastructure/
+                        profile import and caching adapters
+  services/project/     lightweight project snapshot handling
+  stores/               active project and shape stores
   styles/               global SCSS and design tokens
-  views/                route-level views
+  views/                route-level editor view
 ```
 
 ## Deployment
@@ -127,11 +96,9 @@ For GitHub Pages, set the repository Pages source to **GitHub Actions**.
 
 ## Project Status
 
-The project is under active development. The current architecture separates
-domain models, Pinia state, feature modules, infrastructure adapters, RDF
-generation, validation, and export logic. Mapping extensions are being moved
-toward explicit module boundaries so new importers, enrichers, transformations,
-and exporters can be added without growing route views or central stores.
+The project is under active development as a dedicated SHACL profile editor.
+Current work is centered on import resolution, canvas representation and shape
+inspection rather than end-to-end dataset production.
 
 ## License
 

@@ -1,30 +1,18 @@
 <script setup lang="ts">
 /**
- * PrepareView — unified main view that merges setup and mapping into the prepare workflow.
- *
- * Components are added via the Menubar (top): source data, target schema,
- * enrichment, transformation, and reset. The canvas itself
- * stays minimal — no legend, no help asides, no info banners.
+ * SHACL editor main view.
  */
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { VueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { MiniMap } from '@vue-flow/minimap'
-import { useDataStore } from '@/stores/dataStore'
-import { useMetadataStore } from '@/stores/metadataStore'
 import { useShapesStore } from '@/stores/shapesStore'
-import { useMappingStore } from '@/stores/mappingStore'
-import { useProjectStore } from '@/stores/projectStore'
-import { useMappingValidation } from '@/features/mapping/useMappingValidation'
 import { useCanvasGraph } from '@/features/mapping/useCanvasGraph'
-import { useCanvasConnections } from '@/features/mapping/useCanvasConnections'
 import { useCanvasSetupMenu } from '@/features/mapping/useCanvasSetupMenu'
 import { useCanvasPreviews } from '@/features/mapping/useCanvasPreviews'
-import { registerProjectUiStateReset } from '@/services/project/projectUiState'
 import CanvasDialogs from '@/features/mapping/components/CanvasDialogs.vue'
-import MappingValidationSidebar from '@/features/mapping/components/MappingValidationSidebar.vue'
 import Menubar from 'primevue/menubar'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
@@ -34,75 +22,29 @@ import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/controls/dist/style.css'
 import '@vue-flow/minimap/dist/style.css'
 
-const data = useDataStore()
-const metadata = useMetadataStore()
 const shapes = useShapesStore()
-const mapping = useMappingStore()
-const project = useProjectStore()
 const toast = useToast()
 const confirm = useConfirm()
-const { sources } = storeToRefs(data)
 const { nodeShapes, profiles, isResolvingImports } = storeToRefs(shapes)
 const { canvasShapes } = storeToRefs(shapes)
 
 const {
-  tablePreviewOpen,
-  pairedSourcePreviewOpen,
   shapePreviewOpen,
-  previewSource,
-  previewPrimarySource,
-  previewSecondarySource,
   previewShape,
   previewShapeValuesTurtle,
   previewShapeSubjects,
-  isShapePreviewLoading,
   combinedCanvasShapesTurtle,
-  openTablePreview,
-  openNodePreview,
   openShapePreview,
 } = useCanvasPreviews({
-  dataStore: data,
   shapesStore: shapes,
-  mappingStore: mapping,
-  sources,
-  nodeShapes,
   profiles,
   toast,
 })
 
 function resetCanvasUiState(): void {
   closeSetupDialog()
-  tablePreviewOpen.value = false
-  pairedSourcePreviewOpen.value = false
   shapePreviewOpen.value = false
-  validationSidebarOpen.value = false
 }
-
-onMounted(() => {
-  registerProjectUiStateReset(resetCanvasUiState)
-})
-
-onBeforeUnmount(() => {
-  registerProjectUiStateReset(null)
-})
-
-// ---------- SHACL validation ----------
-const {
-  validationSidebarOpen,
-  validationResult,
-  validationError,
-  isValidating,
-  canValidate,
-  validationStatusSeverity,
-  validationStatusIcon,
-  validationStatusLabel,
-} = useMappingValidation({
-  applicationProfile: shapes.ap,
-  profiles,
-  mappingState: mapping.state,
-  sources,
-  getCombinedMetadataTurtle: () => metadata.getCombinedMetadataTurtle(),
-})
 
 const {
   schemaInputRef,
@@ -115,42 +57,19 @@ const {
   closeSetupDialog,
   openSetupDialog,
 } = useCanvasSetupMenu({
-  dataStore: data,
-  metadataStore: metadata,
   shapesStore: shapes,
-  mappingStore: mapping,
-  projectStore: project,
   toast,
   confirm,
   resetUiState: resetCanvasUiState,
 })
 
 const { nodes, edges, nodeTypes, edgeTypes } = useCanvasGraph({
-  dataStore: data,
-  mappingStore: mapping,
-  sources,
   allShapes: nodeShapes,
   canvasShapes,
-  toast,
-  confirm,
-  openSetupDialog,
-  openTablePreview,
-  openNodePreview,
   openShapePreview,
 })
 
-useCanvasConnections({
-  dataStore: data,
-  mappingStore: mapping,
-  sources,
-  toast,
-  confirm,
-})
-
-const hasNothing = computed(() =>
-  profiles.value.length === 0
-  && sources.value.length === 0,
-)
+const hasNothing = computed(() => profiles.value.length === 0)
 </script>
 
 <template>
@@ -170,8 +89,8 @@ const hasNothing = computed(() =>
     <div class="canvas-wrapper">
       <div v-if="hasNothing" class="empty-state">
         <i class="pi pi-plus-circle" />
-        <h2 class="section-title">Add components</h2>
-        <p class="helper-text">Use the top menu to add <strong>Source Data</strong>, <strong>Target Schema</strong>, <strong>Enrichment</strong>, and <strong>Transformation</strong>, or open <strong>Options</strong> to load the built-in example.</p>
+        <h2 class="section-title">SHACL-Profile laden</h2>
+        <p class="helper-text">Nutze das obere Menü, um Turtle-Dateien zu laden oder Profile direkt aus dem Metadata Profile Service in den Editor zu übernehmen.</p>
       </div>
       <VueFlow
         v-else
@@ -188,18 +107,6 @@ const hasNothing = computed(() =>
         <MiniMap pannable zoomable />
       </VueFlow>
 
-      <MappingValidationSidebar
-        :open="validationSidebarOpen"
-        :result="validationResult"
-        :error="validationError"
-        :is-validating="isValidating"
-        :can-validate="canValidate"
-        :status-severity="validationStatusSeverity"
-        :status-icon="validationStatusIcon"
-        :status-label="validationStatusLabel"
-        @close="validationSidebarOpen = false"
-        @open="validationSidebarOpen = true"
-      />
     </div>
 
     <CanvasDialogs
@@ -207,21 +114,13 @@ const hasNothing = computed(() =>
       :active-setup-dialog-visible="activeSetupDialogVisible"
       :active-setup-dialog-key="activeSetupDialogKey"
       :active-setup-dialog-props="activeSetupDialogProps"
-      :table-preview-open="tablePreviewOpen"
-      :paired-source-preview-open="pairedSourcePreviewOpen"
       :shape-preview-open="shapePreviewOpen"
-      :preview-source="previewSource"
-      :preview-primary-source="previewPrimarySource"
-      :preview-secondary-source="previewSecondarySource"
       :preview-shape="previewShape"
       :combined-canvas-shapes-turtle="combinedCanvasShapesTurtle"
       :preview-shape-values-turtle="previewShapeValuesTurtle"
       :preview-shape-subjects="previewShapeSubjects"
-      :is-shape-preview-loading="isShapePreviewLoading"
       @close-setup-dialog="closeSetupDialog"
       @update:active-setup-dialog-visible="activeSetupDialogVisible = $event"
-      @update:table-preview-open="tablePreviewOpen = $event"
-      @update:paired-source-preview-open="pairedSourcePreviewOpen = $event"
       @update:shape-preview-open="shapePreviewOpen = $event"
     />
   </div>

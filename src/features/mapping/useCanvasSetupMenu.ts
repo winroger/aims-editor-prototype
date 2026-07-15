@@ -1,23 +1,12 @@
 import { computed, ref } from 'vue'
 import {
-  dataSourceImportDefinitions,
   getSetupDialogDefinition,
-  mappingNodeActionDefinitions,
   shapeSourceImportDefinitions,
   type SetupDialogId,
   type SetupDialogPayload,
 } from '@/features/mapping/mappingExtensionRegistry'
-import type { useDataStore } from '@/stores/dataStore'
-import type { useMetadataStore } from '@/stores/metadataStore'
-import type { useMappingStore } from '@/stores/mappingStore'
-import type { useProjectStore } from '@/stores/projectStore'
 import type { useShapesStore } from '@/stores/shapesStore'
-import { loadEmbeddedExampleProject } from '@/services/project/loadEmbeddedExampleProject'
 
-type DataStore = ReturnType<typeof useDataStore>
-type MetadataStore = ReturnType<typeof useMetadataStore>
-type MappingStore = ReturnType<typeof useMappingStore>
-type ProjectStore = ReturnType<typeof useProjectStore>
 type ShapesStore = ReturnType<typeof useShapesStore>
 
 interface ToastLike {
@@ -42,11 +31,7 @@ interface ConfirmLike {
 }
 
 interface UseCanvasSetupMenuOptions {
-  dataStore: DataStore
-  metadataStore: MetadataStore
   shapesStore: ShapesStore
-  mappingStore: MappingStore
-  projectStore: ProjectStore
   toast: ToastLike
   confirm: ConfirmLike
   resetUiState?: () => void
@@ -109,47 +94,14 @@ export function useCanvasSetupMenu(options: UseCanvasSetupMenuOptions) {
   function confirmResetAll(): void {
     options.confirm.require({
       header: 'Reset everything',
-      message: 'Profiles, data sources, and mappings will be removed completely.',
+      message: 'Alle geladenen SHACL-Profile und Projektdaten werden entfernt.',
       icon: 'pi pi-exclamation-triangle',
       acceptLabel: 'Reset',
       rejectLabel: 'Cancel',
       acceptClass: 'p-button-danger',
       accept: () => {
         options.resetUiState?.()
-        options.projectStore.reset()
-      },
-    })
-  }
-
-  function hasWorkspaceContent(): boolean {
-    return options.shapesStore.hasShapes
-      || options.dataStore.sources.length > 0
-      || options.mappingStore.state.hasMappings
-      || options.metadataStore.getCombinedMetadataTurtle().trim().length > 0
-  }
-
-  async function runLoadExample(): Promise<void> {
-    await loadEmbeddedExampleProject({
-      projectStore: options.projectStore,
-      toast: options.toast,
-      resetUiState: options.resetUiState,
-    })
-  }
-
-  function confirmLoadExample(): void {
-    if (!hasWorkspaceContent()) {
-      void runLoadExample()
-      return
-    }
-
-    options.confirm.require({
-      header: 'Load built-in example',
-      message: 'The current workspace will be replaced by the built-in showcase project.',
-      icon: 'pi pi-exclamation-triangle',
-      acceptLabel: 'Load example',
-      rejectLabel: 'Cancel',
-      accept: () => {
-        void runLoadExample()
+        options.shapesStore.reset()
       },
     })
   }
@@ -167,16 +119,7 @@ export function useCanvasSetupMenu(options: UseCanvasSetupMenuOptions) {
 
   const menuItems = computed(() => [
     {
-      label: 'Source Data',
-      icon: 'pi pi-table',
-      items: dataSourceImportDefinitions.map(definition => ({
-        label: definition.label,
-        icon: definition.icon,
-        command: () => { openSetupDialog(definition.dialogId) },
-      })),
-    },
-    {
-      label: 'Target Schema',
+      label: 'Profiles',
       icon: 'pi pi-bookmark',
       items: shapeSourceImportDefinitions.map(definition => ({
         label: definition.label,
@@ -191,40 +134,9 @@ export function useCanvasSetupMenu(options: UseCanvasSetupMenuOptions) {
       })),
     },
     {
-      label: 'Enrichment',
-      icon: 'pi pi-sparkles',
-      items: mappingNodeActionDefinitions
-        .filter(definition => definition.category === 'enrichment')
-        .map(definition => ({
-          label: definition.label,
-          icon: definition.icon,
-          command: () => {
-            if (definition.dialogId) openSetupDialog(definition.dialogId)
-          },
-        })),
-    },
-    {
-      label: 'Transformation',
-      icon: 'pi pi-sync',
-      items: mappingNodeActionDefinitions
-        .filter(definition => definition.category === 'transformation')
-        .map(definition => ({
-          label: definition.label,
-          icon: definition.icon,
-          command: () => {
-            definition.createNode?.(options.mappingStore)
-          },
-        })),
-    },
-    {
       label: 'Options',
       icon: 'pi pi-cog',
       items: [
-        {
-          label: 'Load Example',
-          icon: 'pi pi-play-circle',
-          command: confirmLoadExample,
-        },
         {
           label: 'Reset all',
           icon: 'pi pi-refresh',

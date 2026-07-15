@@ -3,11 +3,6 @@ import { computed, ref } from 'vue'
 import { ApplicationProfile, parseShaclProfile, type NodeShape, type ShaclProfile } from '@/domain/NodeShape'
 import { classifyShape } from '@/domain/NodeShape'
 import { resolveImportsRecursive } from '@/services/infrastructure/imports/profileResolver'
-import {
-  createShaclProfileSnapshots,
-  restoreProfilesFromSnapshot,
-  type ShaclProfileSnapshot,
-} from '@/services/project/projectSnapshot'
 
 /**
  * shapesStore
@@ -91,19 +86,6 @@ export const useShapesStore = defineStore('shapes', () => {
     await resolveAllImports()
   }
 
-  function createSnapshot(): ShaclProfileSnapshot[] {
-    return createShaclProfileSnapshots(profiles.value)
-  }
-
-  function restoreSnapshot(snapshot: ShaclProfileSnapshot[]): void {
-    const nextAp = new ApplicationProfile()
-    for (const profile of restoreProfilesFromSnapshot(snapshot)) {
-      nextAp.upsert(profile)
-    }
-    ap.value = nextAp
-    lastResolveErrors.value = []
-  }
-
   function reset(): void {
     ap.value = new ApplicationProfile()
     lastResolveErrors.value = []
@@ -122,8 +104,6 @@ export const useShapesStore = defineStore('shapes', () => {
     addProfileFromTurtle,
     resolveAllImports,
     uploadFallbackForImport,
-    createSnapshot,
-    restoreSnapshot,
     reset,
   }
 })

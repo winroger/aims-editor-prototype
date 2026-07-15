@@ -1,4 +1,3 @@
-/// <reference types="vitest" />
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
@@ -57,25 +56,13 @@ function manualVendorChunks(id: string): string | undefined {
     return 'vendor-shacl-form'
   }
 
-  if (
-    id.includes('/node_modules/leaflet')
-    || id.includes('/node_modules/leaflet-editable/')
-  ) {
-    return 'vendor-leaflet'
-  }
-
   if (id.includes('/node_modules/localforage/')) {
     return 'vendor-storage'
   }
 
   if (id.includes('/node_modules/rdflib/')) return 'vendor-rdflib'
   if (id.includes('/node_modules/jsonld/')) return 'vendor-jsonld'
-  if (id.includes('/node_modules/ro-crate/')) return 'vendor-ro-crate'
   if (id.includes('/node_modules/@rdfjs/') || id.includes('/node_modules/n3/')) return 'vendor-rdfjs'
-
-  if (id.includes('/node_modules/jszip/')) {
-    return 'vendor-export'
-  }
 
   return undefined
 }
@@ -116,9 +103,5 @@ export default defineConfig(({ mode }) => ({
         manualChunks: manualVendorChunks,
       },
     },
-  },
-  test: {
-    environment: 'happy-dom',
-    globals: true,
   },
 }))
