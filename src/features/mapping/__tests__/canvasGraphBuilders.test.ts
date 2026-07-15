@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createColumnMappingEdge } from '@/domain/Mapping'
 import {
-  buildCanvasInheritedShapeNodeId,
   buildCanvasMappingEdges,
   buildCanvasShapeNodeId,
   buildCanvasShapeNodes,
@@ -129,7 +128,7 @@ describe('canvasGraphBuilders', () => {
     ]))
   })
 
-  it('adds inherited proxy nodes recursively as branches are expanded', () => {
+  it('keeps only the root shape node on the canvas and pushes inheritance into node data', () => {
     const ap = new ApplicationProfile()
     ap.upsert(parseShaclProfile(INHERITED_BASE_TTL, 'base.ttl', 'fetched', 'http://example.org/base-profile'))
     ap.upsert(parseShaclProfile(INHERITED_MIDDLE_TTL, 'middle.ttl', 'fetched', 'http://example.org/middle-profile'))
@@ -140,31 +139,18 @@ describe('canvasGraphBuilders', () => {
     expect(rootShape).toBeDefined()
 
     const rootNodeId = buildCanvasShapeNodeId('http://example.org/RootShape')
-    const middleNodeId = buildCanvasInheritedShapeNodeId('http://example.org/RootShape', ['http://example.org/MiddleShape'])
-
-    const parentExpandedNodes = buildCanvasShapeNodes(
+    const nodes = buildCanvasShapeNodes(
       [rootShape!],
       allShapes,
-      new Set([rootNodeId]),
-      () => undefined,
-      () => undefined,
-    )
-    expect(parentExpandedNodes.map(node => node.id)).toEqual([
-      rootNodeId,
-      middleNodeId,
-    ])
-
-    const fullyExpandedNodes = buildCanvasShapeNodes(
-      [rootShape!],
-      allShapes,
-      new Set([rootNodeId, middleNodeId]),
-      () => undefined,
+      new Set(),
       () => undefined,
     )
-    expect(fullyExpandedNodes.map(node => node.id)).toEqual([
-      rootNodeId,
-      middleNodeId,
-      buildCanvasInheritedShapeNodeId('http://example.org/RootShape', ['http://example.org/MiddleShape', 'http://example.org/BaseShape']),
+    expect(nodes.map(node => node.id)).toEqual([rootNodeId])
+    expect((nodes[0]?.data as { inheritedGroups?: Array<{ label: string; children: Array<{ label: string }> }> }).inheritedGroups).toEqual([
+      expect.objectContaining({
+        label: 'Middle shape',
+        children: [expect.objectContaining({ label: 'Base shape' })],
+      }),
     ])
   })
 
@@ -179,13 +165,11 @@ describe('canvasGraphBuilders', () => {
     expect(rootShape).toBeDefined()
 
     const rootNodeId = buildCanvasShapeNodeId('http://example.org/RootShape')
-    const middleNodeId = buildCanvasInheritedShapeNodeId('http://example.org/RootShape', ['http://example.org/MiddleShape'])
 
     const shapeNodes = buildCanvasShapeNodes(
       [rootShape!],
       allShapes,
-      new Set([rootNodeId]),
-      () => undefined,
+      new Set(),
       () => undefined,
     )
     const visibleNodeIds = new Set(['src:people', ...shapeNodes.map(node => node.id)])
@@ -211,7 +195,7 @@ describe('canvasGraphBuilders', () => {
     ])
   })
 
-  it('creates a structural link from the parent shape to visible inherited origin nodes', () => {
+  it('does not create separate structural inheritance edges on the canvas', () => {
     const ap = new ApplicationProfile()
     ap.upsert(parseShaclProfile(INHERITED_BASE_TTL, 'base.ttl', 'fetched', 'http://example.org/base-profile'))
     ap.upsert(parseShaclProfile(INHERITED_MIDDLE_TTL, 'middle.ttl', 'fetched', 'http://example.org/middle-profile'))
@@ -222,36 +206,16 @@ describe('canvasGraphBuilders', () => {
     expect(rootShape).toBeDefined()
 
     const rootNodeId = buildCanvasShapeNodeId('http://example.org/RootShape')
-    const middleNodeId = buildCanvasInheritedShapeNodeId('http://example.org/RootShape', ['http://example.org/MiddleShape'])
-    const baseNodeId = buildCanvasInheritedShapeNodeId('http://example.org/RootShape', ['http://example.org/MiddleShape', 'http://example.org/BaseShape'])
-    const visibleNodeIds = new Set([rootNodeId, middleNodeId, baseNodeId])
+    const visibleNodeIds = new Set([rootNodeId])
 
     const edges = buildCanvasStructuralEdges(
       [],
       [rootShape!],
       allShapes,
-      new Set([rootNodeId, middleNodeId]),
       visibleNodeIds,
     )
 
-    expect(edges).toEqual([
-      expect.objectContaining({
-        id: `inh:${rootNodeId}->${middleNodeId}`,
-        label: 'sh:node',
-        source: rootNodeId,
-        sourceHandle: 'inheritance-source',
-        target: middleNodeId,
-        targetHandle: 'inheritance-target',
-      }),
-      expect.objectContaining({
-        id: `inh:${middleNodeId}->${baseNodeId}`,
-        label: 'sh:node',
-        source: middleNodeId,
-        sourceHandle: 'inheritance-source',
-        target: baseNodeId,
-        targetHandle: 'inheritance-target',
-      }),
-    ])
+    expect(edges).toEqual([])
   })
 
   it('keeps inherited reference edges anchored on the root shape node', () => {
@@ -266,15 +230,13 @@ describe('canvasGraphBuilders', () => {
     expect(rootShape).toBeDefined()
 
     const rootNodeId = buildCanvasShapeNodeId('http://example.org/RootRefShape')
-    const middleNodeId = buildCanvasInheritedShapeNodeId('http://example.org/RootRefShape', ['http://example.org/MiddleRefShape'])
     const targetNodeId = buildCanvasShapeNodeId('http://example.org/TargetShape')
-    const visibleNodeIds = new Set([rootNodeId, middleNodeId, targetNodeId])
+    const visibleNodeIds = new Set([rootNodeId, targetNodeId])
 
     const edges = buildCanvasStructuralEdges(
       [],
       [rootShape!],
       allShapes,
-      new Set([rootNodeId]),
       visibleNodeIds,
     )
 

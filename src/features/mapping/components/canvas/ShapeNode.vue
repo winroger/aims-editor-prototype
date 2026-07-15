@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { Handle, Position } from '@vue-flow/core'
-import { propertyConstraintSummary, propertyDatatypeTargets, propertyNodeTargets, type PropertyShape } from '@/domain/NodeShape'
+import { propertyConstraintSummary, propertyNodeTargets, type PropertyShape } from '@/domain/NodeShape'
 import { CANVAS_NODE_COLORS } from '@/features/mapping/canvasTheme'
-import type { ShapeCanvasNodeData } from '@/features/mapping/canvasGraphBuilders'
+import type { ShapeCanvasNodeData } from '@/features/mapping/inheritanceCanvas'
 import { useShapesStore } from '@/stores/shapesStore'
 
 const props = defineProps<{ data: ShapeCanvasNodeData }>()
@@ -10,10 +10,8 @@ const shapes = useShapesStore()
 
 const label = () => props.data.shape.label ?? localName(props.data.shape.nodeId.value)
 const inheritedProperties = () => props.data.shape.properties.slice(0, inheritedPropertyPrefixCount())
-const ownProperties = () => props.data.shape.properties.slice(inheritedPropertyPrefixCount())
-const showInheritedToggle = () => Boolean(props.data.canToggleInherited)
-const inheritedToggleIcon = () => (props.data.inheritedExpanded ? 'pi pi-chevron-right' : 'pi pi-chevron-down')
-const primaryProperties = () => inheritedProperties()
+const ownProperties = () => props.data.ownProperties ?? props.data.shape.properties.slice(inheritedPropertyPrefixCount())
+const inheritedSections = () => flattenInheritedGroups(props.data.inheritedGroups ?? [])
 
 function localName(iri: string): string {
   return iri.split(/[/#]/).filter(Boolean).pop() ?? iri
@@ -51,14 +49,8 @@ function inheritedFromLabel(p: PropertyShape): string {
   return p.inheritedFromShapeLabel ?? (p.inheritedFromShapeIri ? localName(p.inheritedFromShapeIri) : 'Inherited shape')
 }
 
-function datatypeBadgeLabel(p: PropertyShape): string | null {
-  const summary = propertyConstraintSummary(p)
-  if (summary) return summary
-
-  const datatypeTargets = propertyDatatypeTargets(p)
-  if (datatypeTargets.length === 1) return localName(datatypeTargets[0].value)
-  if (datatypeTargets.length > 1) return datatypeTargets.map(target => localName(target.value)).join(' | ')
-  return null
+function constraintBadgeLabel(p: PropertyShape): string | null {
+  return propertyConstraintSummary(p) ?? null
 }
 
 function isInteractive(): boolean {
@@ -105,6 +97,21 @@ function propertiesMatch(left: PropertyShape, right: PropertyShape): boolean {
   if (propertyLabel(left) === propertyLabel(right)) return true
   return false
 }
+
+function flattenInheritedGroups(groups: NonNullable<ShapeCanvasNodeData['inheritedGroups']>, depth = 0): Array<{ title: string; properties: PropertyShape[]; depth: number }> {
+  const sections: Array<{ title: string; properties: PropertyShape[]; depth: number }> = []
+
+  for (const group of groups) {
+    sections.push(...flattenInheritedGroups(group.children, depth + 1))
+    sections.push({
+      title: group.label,
+      properties: group.properties,
+      depth,
+    })
+  }
+
+  return sections
+}
 </script>
 
 <template>
@@ -123,20 +130,13 @@ function propertiesMatch(left: PropertyShape, right: PropertyShape): boolean {
       '--shape-inherited-bg': CANVAS_NODE_COLORS.shape.inheritedBackground,
     }"
   >
-    <header :class="{ 'header-inherited': data.isInheritedProxy }">
+    <header>
       <Handle
         v-if="isInteractive()"
         id="shape-header"
         type="target"
         :position="Position.Left"
         class="handle handle-shape-target"
-      />
-      <Handle
-        v-else-if="data.isInheritedProxy"
-        id="inheritance-target"
-        type="target"
-        :position="Position.Left"
-        class="handle structural-anchor"
       />
       <i class="pi pi-bookmark" />
       <span class="label">{{ label() }}</span>
@@ -152,65 +152,48 @@ function propertiesMatch(left: PropertyShape, right: PropertyShape): boolean {
       </button>
     </header>
 
-    <div v-if="data.isInheritedProxy" class="proxy-banner">Inherited origin</div>
+    <template v-for="section in inheritedSections()" :key="`${section.depth}:${section.title}`">
+      <div class="section-label inherited-section-label" :style="{ paddingLeft: `${12 + (section.depth * 18)}px` }">
+        <i class="pi pi-sitemap section-icon" />
+        <span>{{ section.title }} (Inherited)</span>
+      </div>
 
-    <button
-      v-if="showInheritedToggle()"
-      class="section-toggle"
-      type="button"
-      :aria-expanded="data.inheritedExpanded"
-      @click.stop="data.onToggleInherited?.()"
-    >
-      <span>Inherited properties</span>
-      <Handle
-        id="inheritance-source"
-        type="source"
-        :position="Position.Right"
-        class="handle structural-anchor section-anchor"
-      />
-      <i :class="inheritedToggleIcon()" />
-    </button>
-
-    <ul class="properties">
-      <li
-        v-for="p in primaryProperties()"
-        :key="p.path?.value ?? p.nodeId.value"
-        class="row"
-        :class="{ 'is-ref': isObjectRef(p), 'inherited-row': p.inherited }"
-      >
-        <Handle
-          v-if="p.path && isInteractive()"
-          :id="`p:${p.path.value}`"
-          type="target"
-          :position="Position.Left"
-          class="handle"
-          :class="isObjectRef(p) ? 'handle-ref-target' : 'handle-target'"
-        />
-
-        <!-- FK reference property -->
-        <template v-if="isObjectRef(p)">
-          <i class="pi pi-link fk-icon" :title="refShapeLabel(p)" />
-          <span class="prop-name">{{ propertyLabel(p) }}</span>
-          <span class="prop-meta">{{ cardinality(p) }}</span>
+      <ul class="properties">
+        <li
+          v-for="p in section.properties"
+          :key="`inh:${section.title}:${p.path?.value ?? p.nodeId.value}`"
+          class="row inherited-row"
+          :class="{ 'is-ref': isObjectRef(p) }"
+        >
           <Handle
             v-if="p.path && isInteractive()"
-            :id="`ref:${p.path.value}`"
-            type="source"
-            :position="Position.Right"
-            class="handle handle-ref-source"
+            :id="`p:${p.path.value}`"
+            type="target"
+            :position="Position.Left"
+            class="handle"
+            :class="isObjectRef(p) ? 'handle-ref-target' : 'handle-target'"
           />
-        </template>
 
-        <!-- Regular literal property -->
-        <template v-else>
-          <span class="prop-name">{{ propertyLabel(p) }}</span>
-          <span v-if="datatypeBadgeLabel(p)" class="type-badge">{{ datatypeBadgeLabel(p) }}</span>
-          <span class="prop-meta">{{ cardinality(p) }}</span>
-        </template>
+          <template v-if="isObjectRef(p)">
+            <span class="prop-name">{{ propertyLabel(p) }}</span>
+            <i class="pi pi-link fk-icon" :title="refShapeLabel(p)" />
+            <Handle
+              v-if="p.path && isInteractive()"
+              :id="`ref:${p.path.value}`"
+              type="source"
+              :position="Position.Right"
+              class="handle handle-ref-source"
+            />
+          </template>
 
-        <i v-if="p.inherited" class="pi pi-sitemap inheritance-icon" :title="`Inherited from ${inheritedFromLabel(p)}`" />
-      </li>
-    </ul>
+          <template v-else>
+            <span class="prop-name">{{ propertyLabel(p) }}</span>
+          </template>
+
+          <i v-if="p.inherited" class="pi pi-sitemap inheritance-icon" :title="`Inherited from ${inheritedFromLabel(p)}`" />
+        </li>
+      </ul>
+    </template>
 
     <div v-if="inheritedProperties().length > 0 && ownProperties().length > 0" class="section-label">
       Own Properties
@@ -233,9 +216,8 @@ function propertiesMatch(left: PropertyShape, right: PropertyShape): boolean {
         />
 
         <template v-if="isObjectRef(p)">
-          <i class="pi pi-link fk-icon" :title="refShapeLabel(p)" />
           <span class="prop-name">{{ propertyLabel(p) }}</span>
-          <span class="prop-meta">{{ cardinality(p) }}</span>
+          <i class="pi pi-link fk-icon" :title="refShapeLabel(p)" />
           <Handle
             v-if="p.path && isInteractive()"
             :id="`ref:${p.path.value}`"
@@ -247,8 +229,7 @@ function propertiesMatch(left: PropertyShape, right: PropertyShape): boolean {
 
         <template v-else>
           <span class="prop-name">{{ propertyLabel(p) }}</span>
-          <span v-if="datatypeBadgeLabel(p)" class="type-badge">{{ datatypeBadgeLabel(p) }}</span>
-          <span class="prop-meta">{{ cardinality(p) }}</span>
+          <span v-if="constraintBadgeLabel(p)" class="type-badge">{{ constraintBadgeLabel(p) }}</span>
         </template>
       </li>
     </ul>
@@ -278,21 +259,7 @@ header {
   font-weight: 600;
   color: var(--shape-header-color);
 }
-.header-inherited {
-  background: #f3f4f6;
-  color: #4b5563;
-}
 .label { flex: 1; word-break: break-all; }
-.proxy-banner {
-  padding: 6px 12px;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #6b7280;
-  background: #f9fafb;
-  border-bottom: 1px solid var(--color-border);
-}
 .preview-btn {
   width: 28px;
   height: 28px;
@@ -323,38 +290,19 @@ header {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-}
-
-.section-toggle {
-  width: 100%;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
-  padding: 6px 12px;
-  border: 0;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface-2);
-  color: var(--color-text-muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  text-align: left;
-  cursor: pointer;
-  position: relative;
-
-  &:hover {
-    background: color-mix(in srgb, var(--color-surface-2) 86%, white);
-  }
-
-  i {
-    flex-shrink: 0;
-  }
+}
+.inherited-section-label {
+  background: #f9fafb;
+  border-top: 1px solid var(--color-border);
 }
 
-.section-anchor {
-  right: 30px !important;
+.section-icon {
+  font-size: 0.72rem;
+  color: #9ca3af;
+  flex-shrink: 0;
 }
 
 .row {
@@ -375,12 +323,17 @@ header {
 
 .inherited-row {
   background: #f9fafb;
+
+  .prop-name {
+    color: var(--color-text-muted);
+  }
 }
 
 .fk-icon {
   font-size: 0.75rem;
   color: var(--shape-handle-color);
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .prop-name {

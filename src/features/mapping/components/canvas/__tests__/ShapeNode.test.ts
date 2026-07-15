@@ -3,7 +3,6 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { ApplicationProfile, parseShaclProfile } from '@/domain/NodeShape'
 import {
-  buildCanvasInheritedShapeNodeId,
   buildCanvasShapeNodeId,
   buildCanvasShapeNodes,
   type ShapeCanvasNodeData,
@@ -136,7 +135,6 @@ describe('ShapeNode', () => {
       ap.allNodeShapes(),
       new Set([buildCanvasShapeNodeId(PROFILE_IDS.timberBuilding)]),
       () => undefined,
-      () => undefined,
     )
 
     const nodeData = nodes[0]?.data as ShapeCanvasNodeData | undefined
@@ -157,7 +155,7 @@ describe('ShapeNode', () => {
     })
 
     const sectionLabels = wrapper.findAll('.section-label').map(node => node.text())
-    expect(sectionLabels).toEqual(['Own Properties'])
+    expect(sectionLabels).toEqual(['ARDMP building (Inherited)', 'Own Properties'])
 
     const ownPropertiesLabelIndex = wrapper.text().indexOf('Own Properties')
     const inheritedPropertyIndex = wrapper.text().indexOf('Thumbnail Image')
@@ -184,9 +182,19 @@ describe('ShapeNode', () => {
       'Timber volume',
       'Material Type',
     ])
+    expect(propertyRows[1]).not.toEqual(expect.arrayContaining([
+      'Name',
+      'Stakeholder',
+      'Date of production',
+      'Location',
+      'Source',
+      'Thumbnail Image',
+    ]))
+    expect(wrapper.findAll('.type-badge')).toHaveLength(0)
+    expect(wrapper.findAll('.prop-meta')).toHaveLength(0)
   })
 
-  it('allows inherited origin nodes to separate and expand their own inherited properties', () => {
+  it('renders recursive inherited shapes as hierarchical sections inside the parent node', () => {
     const ap = new ApplicationProfile()
     ap.upsert(parseShaclProfile(RECURSIVE_BASE_TTL, 'base.ttl', 'uploaded'))
     ap.upsert(parseShaclProfile(RECURSIVE_MIDDLE_TTL, 'middle.ttl', 'uploaded'))
@@ -198,22 +206,20 @@ describe('ShapeNode', () => {
     const rootShape = ap.findNodeShape('http://example.org/RootShape')
     expect(rootShape).toBeDefined()
 
-    const expandedNodeIds = new Set([
-      buildCanvasShapeNodeId('http://example.org/RootShape'),
-      buildCanvasInheritedShapeNodeId('http://example.org/RootShape', ['http://example.org/MiddleShape']),
-    ])
-
     const nodes = buildCanvasShapeNodes(
       [rootShape!],
       ap.allNodeShapes(),
-      expandedNodeIds,
-      () => undefined,
+      new Set(),
       () => undefined,
     )
 
-    const middleNode = nodes.find(node => node.id === buildCanvasInheritedShapeNodeId('http://example.org/RootShape', ['http://example.org/MiddleShape']))
-    const nodeData = middleNode?.data as ShapeCanvasNodeData | undefined
-    expect(nodeData?.canToggleInherited).toBe(true)
+    const nodeData = nodes[0]?.data as ShapeCanvasNodeData | undefined
+    expect(nodeData?.inheritedGroups).toEqual([
+      expect.objectContaining({
+        label: 'Middle shape',
+        children: [expect.objectContaining({ label: 'Base shape' })],
+      }),
+    ])
 
     const wrapper = mount(ShapeNode, {
       props: {
@@ -233,11 +239,17 @@ describe('ShapeNode', () => {
       list.findAll('.row').map(row => row.find('.prop-name').text()),
     )
 
+    const sectionLabels = wrapper.findAll('.section-label').map(node => node.text())
+    expect(sectionLabels).toEqual(['Base shape (Inherited)', 'Middle shape (Inherited)', 'Own Properties'])
+
     expect(propertyRows[0]).toEqual([
       'Base field',
     ])
     expect(propertyRows[1]).toEqual([
       'Middle field',
+    ])
+    expect(propertyRows[2]).toEqual([
+      'Own field',
     ])
   })
 
@@ -253,7 +265,6 @@ describe('ShapeNode', () => {
       [shape!],
       ap.allNodeShapes(),
       new Set(),
-      () => undefined,
       () => undefined,
     )
 

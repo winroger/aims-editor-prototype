@@ -4,12 +4,10 @@ import { isCanvasVisibleDataSource, type DataSource } from '@/domain/DataSource'
 import type { NodeShape } from '@/domain/NodeShape'
 import {
   applyDefaultExtensionEdgeStyle,
-  buildCanvasShapeNodeId,
   buildCanvasMappingEdges,
   buildCanvasShapeNodes,
   buildCanvasSourceNodes,
   buildCanvasStructuralEdges,
-  type ShapeCanvasNodeData,
   preserveCanvasNodePositions,
   shouldAutoLayoutCanvas,
 } from '@/features/mapping/canvasGraphBuilders'
@@ -73,7 +71,6 @@ interface UseCanvasGraphOptions {
 export function useCanvasGraph(options: UseCanvasGraphOptions) {
   const nodes = ref<Node[]>([])
   const edges = ref<Edge[]>([])
-  const expandedShapeNodeIds = ref<Set<string>>(new Set())
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const nodeTypes: any = canvasNodeTypes
@@ -95,37 +92,12 @@ export function useCanvasGraph(options: UseCanvasGraphOptions) {
   })
 
   function positionForNewNode(node: Node, index: number): Node['position'] {
-    if (node.type === 'shapeNode' && node.data && typeof node.data === 'object') {
-      const shapeData = node.data as ShapeCanvasNodeData
-      if (shapeData.anchorNodeId) {
-        let anchorNode: Node | undefined
-        for (const candidate of nodes.value as Node[]) {
-          if (candidate.id === shapeData.anchorNodeId) {
-            anchorNode = candidate
-            break
-          }
-        }
-        if (anchorNode) {
-          return {
-            x: anchorNode.position.x + 440,
-            y: anchorNode.position.y + ((shapeData.inheritedIndex ?? 0) * 180),
-          }
-        }
-      }
-    }
     return defaultPositionForNodeType(node.type, index)
   }
 
   function autoLayoutNodes(nextNodes: Node[], nextEdges: Edge[]): Node[] {
     const layout = layoutMappingGraph as unknown as (nodes: Node[], edges: Edge[]) => Node[]
     return layout(nextNodes, nextEdges)
-  }
-
-  function toggleInherited(nodeId: string): void {
-    const next = new Set(expandedShapeNodeIds.value)
-    if (next.has(nodeId)) next.delete(nodeId)
-    else next.add(nodeId)
-    expandedShapeNodeIds.value = next
   }
 
   async function runNode(nodeId: string): Promise<void> {
@@ -286,9 +258,8 @@ export function useCanvasGraph(options: UseCanvasGraphOptions) {
     const shapeNodes: Node[] = buildCanvasShapeNodes(
       options.canvasShapes.value,
       options.allShapes.value,
-      expandedShapeNodeIds.value,
+      new Set(),
       options.openShapePreview,
-      toggleInherited,
     )
 
     const nextNodes: Node[] = [...extensionNodes, ...tableNodes, ...shapeNodes]
@@ -303,7 +274,6 @@ export function useCanvasGraph(options: UseCanvasGraphOptions) {
       visibleSources.value,
       options.canvasShapes.value,
       options.allShapes.value,
-      expandedShapeNodeIds.value,
       visibleNodeIds,
     )
 
@@ -311,9 +281,7 @@ export function useCanvasGraph(options: UseCanvasGraphOptions) {
       .filter(edge => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target))
 
     const existingNodes = nodes.value as Node[]
-    const inheritedPreviewOnlyDelta = isOnlyInheritedPreviewDelta(existingNodes, nextNodes)
-
-    if (shouldAutoLayoutCanvas(existingNodes, nextNodes) && !inheritedPreviewOnlyDelta) {
+    if (shouldAutoLayoutCanvas(existingNodes, nextNodes)) {
       nodes.value = autoLayoutNodes(nextNodes, allEdges)
     } else {
       nodes.value = preserveCanvasNodePositions(existingNodes, nextNodes, positionForNewNode)
@@ -327,7 +295,6 @@ export function useCanvasGraph(options: UseCanvasGraphOptions) {
       () => options.sources.value.map(source => source.id).join('|'),
       () => refreshingSourceGroups.value.join('|'),
       () => options.mappingStore.extensionStateRevision,
-      () => Array.from(expandedShapeNodeIds.value).sort().join('|'),
       options.canvasShapes,
       options.allShapes,
       () => options.mappingStore.state.edges.length,
@@ -336,45 +303,16 @@ export function useCanvasGraph(options: UseCanvasGraphOptions) {
     { immediate: true },
   )
 
-  watch(
-    options.canvasShapes,
-    nextShapes => {
-      const nextVisibleIds = new Set<string>()
-      for (const shape of nextShapes) {
-        nextVisibleIds.add(buildCanvasShapeNodeId(shape.nodeId.value))
-      }
-      expandedShapeNodeIds.value = new Set(
-        Array.from(expandedShapeNodeIds.value).filter(nodeId => {
-          if (nodeId.startsWith('shape:')) return nextVisibleIds.has(nodeId)
-          return true
-        }),
-      )
-    },
-    { immediate: false },
-  )
-
   return {
     nodes,
     edges,
     nodeTypes,
     edgeTypes,
-    expandedShapeNodeIds,
-    toggleInherited,
   }
 }
 
 function isVisibleSource(source: DataSource): boolean {
   return isCanvasVisibleDataSource(source)
-}
-
-function isOnlyInheritedPreviewDelta(existingNodes: Node[], nextNodes: Node[]): boolean {
-  const existingIds = new Set(existingNodes.map(node => node.id))
-  const nextIds = new Set(nextNodes.map(node => node.id))
-  const added = nextNodes.filter(node => !existingIds.has(node.id))
-  const removed = existingNodes.filter(node => !nextIds.has(node.id))
-  const delta = [...added, ...removed]
-
-  return delta.length > 0 && delta.every(node => node.id.startsWith('inherited:'))
 }
 
 

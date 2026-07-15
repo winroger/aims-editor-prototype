@@ -5,9 +5,9 @@ import { propertyNodeTargets, propertyRelationshipKinds, type NodeShape, type Pr
 import { applyDefaultExtensionEdgeStyle, propertyRelationshipLabel, type CanvasEdgeKind } from '@/features/mapping/canvasEdgeLabels'
 import { CANVAS_EDGE_STYLES } from '@/features/mapping/canvasTheme'
 import {
-  buildCanvasInheritedShapeNodeId,
   buildCanvasShapeNodeId,
-  buildInheritedOriginEdges,
+  buildInheritedPropertyGroups,
+  buildOwnProperties,
   collectVisibleShapeNodeDescriptors,
   inheritedOriginShapesForRoot,
   inheritedPropertyPrefixCount,
@@ -34,7 +34,6 @@ export function buildCanvasShapeNodes(
   allShapes: NodeShape[],
   expandedShapeNodeIds: Set<string>,
   openShapePreview: (shape: NodeShape) => void | Promise<void>,
-  toggleInherited: (nodeId: string) => void,
 ): Node[] {
   const descriptors = collectVisibleShapeNodeDescriptors(rootShapes, allShapes, expandedShapeNodeIds)
 
@@ -48,14 +47,10 @@ export function buildCanvasShapeNodes(
       representedShapeIri: descriptor.representedShapeIri,
       inheritedOriginShapes: inheritedOriginShapesForRoot(descriptor.shape, allShapes),
       inheritedPropertyCount: inheritedPropertyPrefixCount(descriptor.shape, allShapes),
-      interactive: !descriptor.isInheritedProxy,
-      anchorNodeId: descriptor.anchorNodeId,
-      inheritedIndex: descriptor.inheritedIndex,
-      canToggleInherited: descriptor.canToggleInherited,
-      inheritedExpanded: descriptor.inheritedExpanded,
-      isInheritedProxy: descriptor.isInheritedProxy,
-      onToggleInherited: descriptor.canToggleInherited ? () => toggleInherited(descriptor.nodeId) : undefined,
-      onPreview: descriptor.isInheritedProxy ? undefined : () => openShapePreview(descriptor.shape),
+      inheritedGroups: buildInheritedPropertyGroups(descriptor.shape, allShapes),
+      ownProperties: buildOwnProperties(descriptor.shape, allShapes),
+      interactive: true,
+      onPreview: () => openShapePreview(descriptor.shape),
     } satisfies ShapeCanvasNodeData,
   }))
 }
@@ -99,13 +94,11 @@ export function buildCanvasStructuralEdges(
   visibleSources: DataSource[],
   rootShapes: NodeShape[],
   allShapes: NodeShape[] = rootShapes,
-  expandedShapeNodeIds: Set<string> = new Set(),
   visibleNodeIds?: Set<string>,
 ): Edge[] {
   return [
     ...buildTableRelationEdges(visibleSources),
-    ...buildShapeReferenceEdges(rootShapes, allShapes, expandedShapeNodeIds, visibleNodeIds),
-    ...buildInheritedOriginEdges(rootShapes, allShapes, expandedShapeNodeIds, visibleNodeIds, CANVAS_EDGE_STYLES.structural),
+    ...buildShapeReferenceEdges(rootShapes, allShapes, visibleNodeIds),
   ]
 }
 
@@ -140,7 +133,6 @@ function buildTableRelationEdges(visibleSources: DataSource[]): Edge[] {
 function buildShapeReferenceEdges(
   rootShapes: NodeShape[],
   allShapes: NodeShape[],
-  expandedShapeNodeIds: Set<string>,
   visibleNodeIds?: Set<string>,
 ): Edge[] {
   const edges: Edge[] = []
@@ -218,7 +210,6 @@ function localName(iri: string): string {
 
 export {
   applyDefaultExtensionEdgeStyle,
-  buildCanvasInheritedShapeNodeId,
   buildCanvasShapeNodeId,
   parseCanvasShapeNodeTarget,
 }
